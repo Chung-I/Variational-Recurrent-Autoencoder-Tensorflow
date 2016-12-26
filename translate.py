@@ -156,6 +156,9 @@ def train():
       FLAGS.data_dir, FLAGS.en_vocab_size, FLAGS.fr_vocab_size)
 
   with tf.Session() as sess:
+    train_writer = tf.summary.FileWriter(FLAGS.train_dir, graph=session.graph)
+    dev_writer = tf.summary.FileWriter(FLAGS.train_dir, graph=session.graph)
+
     # Create model.
     print("Creating %d layers of %d units." % (FLAGS.num_layers, FLAGS.size))
     model = create_model(sess, False)
@@ -189,8 +192,9 @@ def train():
       start_time = time.time()
       encoder_inputs, decoder_inputs, target_weights = model.get_batch(
           train_set, bucket_id)
-      _, step_loss, _ = model.step(sess, encoder_inputs, decoder_inputs,
+      _, step_loss, _, summaries = model.step(sess, encoder_inputs, decoder_inputs,
                                    target_weights, bucket_id, False)
+      train_writer.add_summary(summaries, current_step)
       step_time += (time.time() - start_time) / FLAGS.steps_per_checkpoint
       loss += step_loss / FLAGS.steps_per_checkpoint
       current_step += 1
@@ -218,8 +222,10 @@ def train():
             continue
           encoder_inputs, decoder_inputs, target_weights = model.get_batch(
               dev_set, bucket_id)
-          _, eval_loss, _ = model.step(sess, encoder_inputs, decoder_inputs,
+          _, eval_loss, _, summaries = model.step(sess, encoder_inputs, decoder_inputs,
                                        target_weights, bucket_id, True)
+          dev_writer.add_summary(summaries, current_step)
+
           eval_ppx = math.exp(float(eval_loss)) if eval_loss < 300 else float(
               "inf")
           print("  eval: bucket %d perplexity %.2f" % (bucket_id, eval_ppx))
@@ -261,7 +267,7 @@ def decode():
       encoder_inputs, decoder_inputs, target_weights = model.get_batch(
           {bucket_id: [(token_ids, [])]}, bucket_id)
       # Get output logits for the sentence.
-      _, _, output_logits = model.step(sess, encoder_inputs, decoder_inputs,
+      _, _, output_logits, _ = model.step(sess, encoder_inputs, decoder_inputs,
                                        target_weights, bucket_id, True)
       # This is a greedy decoder - outputs are just argmaxes of output_logits.
       outputs = [int(np.argmax(logit, axis=1)) for logit in output_logits]
