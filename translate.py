@@ -66,10 +66,14 @@ tf.app.flags.DEFINE_integer("steps_per_checkpoint", 200,
                             "How many training steps to do per checkpoint.")
 tf.app.flags.DEFINE_boolean("decode", False,
                             "Set to True for interactive decoding.")
+tf.app.flags.DEFINE_boolean("adam", True,
+                            "use adam optimizer.")
 tf.app.flags.DEFINE_boolean("self_test", False,
                             "Run a self-test if this is set to True.")
 tf.app.flags.DEFINE_boolean("use_fp16", False,
                             "Train using fp16 instead of fp32.")
+tf.app.flags.DEFINE_boolean("new", True,
+                            "Train a new model.")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -119,6 +123,7 @@ def read_data(source_path, target_path, max_size=None):
 def create_model(session, forward_only):
   """Create translation model and initialize or load parameters in session."""
   dtype = tf.float16 if FLAGS.use_fp16 else tf.float32
+  optimizer = tf.train.AdamOptimizer(FLAGS.learning_rate) if FLAGS.adam else None
   model = seq2seq_model.Seq2SeqModel(
       FLAGS.en_vocab_size,
       FLAGS.fr_vocab_size,
@@ -129,10 +134,11 @@ def create_model(session, forward_only):
       FLAGS.batch_size,
       FLAGS.learning_rate,
       FLAGS.learning_rate_decay_factor,
+      optimizer=optimizer,
       forward_only=forward_only,
       dtype=dtype)
   ckpt = tf.train.get_checkpoint_state(FLAGS.train_dir)
-  if ckpt and tf.train.checkpoint_exists(ckpt.model_checkpoint_path):
+  if not FLAGS.new and ckpt and tf.train.checkpoint_exists(ckpt.model_checkpoint_path):
     print("Reading model parameters from %s" % ckpt.model_checkpoint_path)
     model.saver.restore(session, ckpt.model_checkpoint_path)
   else:
@@ -196,8 +202,9 @@ def train():
                "%.2f" % (model.global_step.eval(), model.learning_rate.eval(),
                          step_time, perplexity))
         # Decrease learning rate if no improvement was seen over last 3 times.
-        if len(previous_losses) > 2 and loss > max(previous_losses[-3:]):
-          sess.run(model.learning_rate_decay_op)
+        if not FLAGS.adam:
+          if len(previous_losses) > 2 and loss > max(previous_losses[-3:]):
+            sess.run(model.learning_rate_decay_op)
         previous_losses.append(loss)
         # Save checkpoint and zero timer and loss.
         checkpoint_path = os.path.join(FLAGS.train_dir, "translate.ckpt")
