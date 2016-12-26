@@ -194,7 +194,7 @@ class Seq2SeqModel(object):
       self.loss_over_buckets = tf.add_n(self.losses)
       tf.summary.scalar("loss for bucket {0}".format(b), self.losses[b])
       tf.summary.scalar("overall loss", self.loss_over_buckets)
-      self.merged_summary_op = tf.summary.merge_all()
+      #self.merged_summary_op = tf.summary.merge_all()
     # Gradients and SGD update operation for training the model.
     params = tf.trainable_variables()
     if not forward_only:
@@ -266,12 +266,12 @@ class Seq2SeqModel(object):
       for l in xrange(decoder_size):  # Output logits.
         output_feed.append(self.outputs[bucket_id][l])
 
-    output_feed.append(self.merged_summary_op)
+    #output_feed.append(self.merged_summary_op)
     outputs = session.run(output_feed, input_feed)
     if not forward_only:
-      return outputs[1], outputs[2], None, outputs[-1]  # Gradient norm, loss, no outputs, summary.
+      return outputs[1], outputs[2], None  # Gradient norm, loss, no outputs, summary.
     else:
-      return None, outputs[0], outputs[1:-1], outputs[-1]  # No gradient norm, loss, outputs, summary.
+      return None, outputs[0], outputs[1:-1]  # No gradient norm, loss, outputs, summary.
 
   def get_batch(self, data, bucket_id):
     """Get a random batch of data from the specified bucket, prepare for step.

@@ -192,9 +192,9 @@ def train():
       start_time = time.time()
       encoder_inputs, decoder_inputs, target_weights = model.get_batch(
           train_set, bucket_id)
-      _, step_loss, _, summaries = model.step(sess, encoder_inputs, decoder_inputs,
+      _, step_loss, _ = model.step(sess, encoder_inputs, decoder_inputs,
                                    target_weights, bucket_id, False)
-      train_writer.add_summary(summaries, current_step)
+      #train_writer.add_summary(summaries, current_step)
       step_time += (time.time() - start_time) / FLAGS.steps_per_checkpoint
       loss += step_loss / FLAGS.steps_per_checkpoint
       current_step += 1
@@ -222,9 +222,9 @@ def train():
             continue
           encoder_inputs, decoder_inputs, target_weights = model.get_batch(
               dev_set, bucket_id)
-          _, eval_loss, _, summaries = model.step(sess, encoder_inputs, decoder_inputs,
+          _, eval_loss, _ = model.step(sess, encoder_inputs, decoder_inputs,
                                        target_weights, bucket_id, True)
-          dev_writer.add_summary(summaries, current_step)
+          #dev_writer.add_summary(summaries, current_step)
 
           eval_ppx = math.exp(float(eval_loss)) if eval_loss < 300 else float(
               "inf")
