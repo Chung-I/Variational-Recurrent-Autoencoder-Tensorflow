@@ -156,8 +156,8 @@ def train():
       FLAGS.data_dir, FLAGS.en_vocab_size, FLAGS.fr_vocab_size)
 
   with tf.Session() as sess:
-    train_writer = tf.summary.FileWriter(FLAGS.train_dir, graph=session.graph)
-    dev_writer = tf.summary.FileWriter(FLAGS.train_dir, graph=session.graph)
+    train_writer = tf.summary.FileWriter(FLAGS.train_dir, graph=sess.graph)
+    dev_writer = tf.summary.FileWriter(FLAGS.train_dir, graph=sess.graph)
 
     # Create model.
     print("Creating %d layers of %d units." % (FLAGS.num_layers, FLAGS.size))
