@@ -194,8 +194,10 @@ def train():
           train_set, bucket_id)
       _, step_loss, _ = model.step(sess, encoder_inputs, decoder_inputs,
                                    target_weights, bucket_id, False)
-      #train_writer.add_summary(summaries, current_step)
+      train_writer.add_summary(loss_summary, current_step)
       step_time += (time.time() - start_time) / FLAGS.steps_per_checkpoint
+      step_loss_summary = tf.Summary(value=[tf.Summary.Value(tag="step loss", simple_value=step_loss)])
+      train_writer.add_summary(step_loss_summary, current_step)
       loss += step_loss / FLAGS.steps_per_checkpoint
       current_step += 1
 
@@ -206,6 +208,8 @@ def train():
         print ("global step %d learning rate %.4f step-time %.2f perplexity "
                "%.2f" % (model.global_step.eval(), model.learning_rate.eval(),
                          step_time, perplexity))
+        perp_summary = tf.Summary(value=[tf.Summary.Value(tag="train perplexity", simple_value=perplexiy)])
+        train_writer.add_summary(perp_summary, current_step)
         # Decrease learning rate if no improvement was seen over last 3 times.
         if not FLAGS.adam:
           if len(previous_losses) > 2 and loss > max(previous_losses[-3:]):
@@ -224,11 +228,14 @@ def train():
               dev_set, bucket_id)
           _, eval_loss, _ = model.step(sess, encoder_inputs, decoder_inputs,
                                        target_weights, bucket_id, True)
-          #dev_writer.add_summary(summaries, current_step)
+          eval_loss_summary = tf.Summary(value=[tf.Summary.Value(tag="eval loss", simple_value=eval_loss)])
+          dev_writer.add_summary(eval_loss_summary, current_step)
 
           eval_ppx = math.exp(float(eval_loss)) if eval_loss < 300 else float(
               "inf")
           print("  eval: bucket %d perplexity %.2f" % (bucket_id, eval_ppx))
+          eval_perp_summary = tf.Summary(value=[tf.Summary.Value(tag="eval perplexity", simple_value=eval_ppx)])
+          dev_writer.add_summary(eval_perp_summary, current_step)
         sys.stdout.flush()
 
 
