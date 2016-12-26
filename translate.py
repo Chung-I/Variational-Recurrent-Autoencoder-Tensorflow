@@ -123,7 +123,7 @@ def read_data(source_path, target_path, max_size=None):
 def create_model(session, forward_only):
   """Create translation model and initialize or load parameters in session."""
   dtype = tf.float16 if FLAGS.use_fp16 else tf.float32
-  optimizer = tf.train.AdamOptimizer(FLAGS.learning_rate) if FLAGS.adam else None
+  optimizer = tf.train.AdamOptimizer() if FLAGS.adam else None
   model = seq2seq_model.Seq2SeqModel(
       FLAGS.en_vocab_size,
       FLAGS.fr_vocab_size,
