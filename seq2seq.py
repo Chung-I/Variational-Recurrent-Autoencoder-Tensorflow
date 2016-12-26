@@ -1160,6 +1160,68 @@ def embedding_attention_encoder(encoder_inputs,
 
     return encoder_state, attention_states
 
+def embedding_encoder(encoder_inputs,
+                                cell,
+                                num_encoder_symbols,
+                                embedding_size,
+                                dtype=None,
+                                scope=None):
+  """Embedding sequence-to-sequence model with attention.
+
+  This model first embeds encoder_inputs by a newly created embedding (of shape
+  [num_encoder_symbols x input_size]). Then it runs an RNN to encode
+  embedded encoder_inputs into a state vector. It keeps the outputs of this
+  RNN at every step to use for attention later. Next, it embeds decoder_inputs
+  by another newly created embedding (of shape [num_decoder_symbols x
+  input_size]). Then it runs attention decoder, initialized with the last
+  encoder state, on embedded decoder_inputs and attending to encoder outputs.
+
+  Warning: when output_projection is None, the size of the attention vectors
+  and variables will be made proportional to num_decoder_symbols, can be large.
+
+  Args:
+    encoder_inputs: A list of 1D int32 Tensors of shape [batch_size].
+    decoder_inputs: A list of 1D int32 Tensors of shape [batch_size].
+    cell: rnn_cell.RNNCell defining the cell function and size.
+    num_encoder_symbols: Integer; number of symbols on the encoder side.
+    num_decoder_symbols: Integer; number of symbols on the decoder side.
+    embedding_size: Integer, the length of the embedding vector for each symbol.
+    num_heads: Number of attention heads that read from attention_states.
+    output_projection: None or a pair (W, B) of output projection weights and
+      biases; W has shape [output_size x num_decoder_symbols] and B has
+      shape [num_decoder_symbols]; if provided and feed_previous=True, each
+      fed previous output will first be multiplied by W and added B.
+    feed_previous: Boolean or scalar Boolean Tensor; if True, only the first
+      of decoder_inputs will be used (the "GO" symbol), and all other decoder
+      inputs will be taken from previous outputs (as in embedding_rnn_decoder).
+      If False, decoder_inputs are used as given (the standard decoder case).
+    dtype: The dtype of the initial RNN state (default: tf.float32).
+    scope: VariableScope for the created subgraph; defaults to
+      "embedding_attention_seq2seq".
+    initial_state_attention: If False (default), initial attentions are zero.
+      If True, initialize the attentions from the initial state and attention
+      states.
+
+  Returns:
+    A tuple of the form (outputs, state), where:
+      outputs: A list of the same length as decoder_inputs of 2D Tensors with
+        shape [batch_size x num_decoder_symbols] containing the generated
+        outputs.
+      state: The state of each decoder cell at the final time-step.
+        It is a 2D Tensor of shape [batch_size x cell.state_size].
+  """
+  with variable_scope.variable_scope(
+      scope or "embedding_attention_encoder", dtype=dtype) as scope:
+    dtype = scope.dtype
+    # Encoder.
+    encoder_cell = rnn_cell.EmbeddingWrapper(
+        cell, embedding_classes=num_encoder_symbols,
+        embedding_size=embedding_size)
+    _, encoder_state = rnn.rnn(
+        encoder_cell, encoder_inputs, dtype=dtype)
+
+    return encoder_state
+
 
 def sequence_loss_by_example(logits, targets, weights,
                              average_across_timesteps=True,
@@ -1364,8 +1426,8 @@ def autoencoder_with_buckets(encoder_inputs, decoder_inputs, targets, weights,
     for j, bucket in enumerate(buckets):
       with variable_scope.variable_scope(variable_scope.get_variable_scope(),
                                          reuse=True if j > 0 else None):
-        encoder_state, attention_states = encoder(encoder_inputs[:bucket[0]])
-        bucket_outputs, _ = decoder(encoder_state, attention_states, decoder_inputs[:bucket[1]])
+        encoder_state = encoder(encoder_inputs[:bucket[0]])
+        bucket_outputs, _ = decoder(encoder_state, decoder_inputs[:bucket[1]])
         outputs.append(bucket_outputs)
         if per_example_loss:
           losses.append(sequence_loss_by_example(
