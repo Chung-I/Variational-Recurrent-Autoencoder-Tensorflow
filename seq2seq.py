@@ -982,18 +982,18 @@ def one2many_rnn_seq2seq(encoder_inputs,
 
   return outputs_dict, state_dict
 
-def embedding_attentionprojection_decoder(encoder_state,
-                                          attention_states,
-                                          decoder_inputs,
-                                          cell,
-                                          num_decoder_symbols,
-                                          embedding_size,
-                                          num_heads=1,
-                                          output_projection=None,
-                                          feed_previous=False,
-                                          dtype=None,
-                                          scope=None,
-                                          initial_state_attention=False):
+def embedding_attention_projection_decoder(encoder_state,
+                                           attention_states,
+                                           decoder_inputs,
+                                           cell,
+                                           num_decoder_symbols,
+                                           embedding_size,
+                                           num_heads=1,
+                                           output_projection=None,
+                                           feed_previous=False,
+                                           dtype=None,
+                                           scope=None,
+                                           initial_state_attention=False):
   """Embedding sequence-to-sequence model with attention.
 
   This model first embeds encoder_inputs by a newly created embedding (of shape
@@ -1311,7 +1311,7 @@ def model_with_buckets(encoder_inputs, decoder_inputs, targets, weights,
 
 
 def autoencoder_with_buckets(encoder_inputs, decoder_inputs, targets, weights,
-                       buckets, encoder, decoder, latent_layer, softmax_loss_function=None,
+                       buckets, encoder, decoder, softmax_loss_function=None,
                        per_example_loss=False, name=None):
   """Create a sequence-to-sequence model with support for bucketing.
 

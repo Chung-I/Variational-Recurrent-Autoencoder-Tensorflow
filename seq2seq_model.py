@@ -122,6 +122,29 @@ class Seq2SeqModel(object):
     if num_layers > 1:
       cell = tf.nn.rnn_cell.MultiRNNCell([single_cell] * num_layers)
 
+    def encoder_f(encoder_inputs):
+      return seq2seq.embedding_attention_encoder(
+          encoder_inputs,
+          cell,
+          num_encoder_symbols=source_vocab_size,
+          embedding_size=size,
+          dtype=dtype
+          encoder_inputs,
+          decoder_inputs)
+
+    def decoder_f(attention_states, decoder_inputs, do_decode):
+      return seq2seq.embedding_attention_projection_decoder(
+          encoder_state,
+           attention_states,
+           decoder_inputs,
+           cell,
+           num_decoder_symbols=target_vocab_size,
+           embedding_size=size,
+           output_projection=output_projection,
+           feed_previous=do_decode,
+           dtype=dtype,
+           scope=None)
+
     # The seq2seq function: we use embedding for the input and attention.
     def seq2seq_f(encoder_inputs, decoder_inputs, do_decode):
       return tf.nn.seq2seq.embedding_attention_seq2seq(
@@ -154,9 +177,9 @@ class Seq2SeqModel(object):
 
     # Training outputs and losses.
     if forward_only:
-      self.outputs, self.losses = tf.nn.seq2seq.model_with_buckets(
+      self.outputs, self.losses = tf.nn.seq2seq.autoencoder_with_buckets(
           self.encoder_inputs, self.decoder_inputs, targets,
-          self.target_weights, buckets, lambda x, y: seq2seq_f(x, y, True),
+          self.target_weights, buckets, encoder_f, lambda x, y: decoder_f(x, y, True),
           softmax_loss_function=softmax_loss_function)
       # If we use output projection, we need to project outputs for decoding.
       if output_projection is not None:
@@ -166,10 +189,10 @@ class Seq2SeqModel(object):
               for output in self.outputs[b]
           ]
     else:
-      self.outputs, self.losses = tf.nn.seq2seq.model_with_buckets(
+      self.outputs, self.losses = tf.nn.seq2seq.autoencoder_with_buckets(
           self.encoder_inputs, self.decoder_inputs, targets,
-          self.target_weights, buckets,
-          lambda x, y: seq2seq_f(x, y, False),
+          self.target_weights, buckets, encoder_f,
+          lambda x, y: decoder_f(x, y, False),
           softmax_loss_function=softmax_loss_function)
 
     # Gradients and SGD update operation for training the model.
