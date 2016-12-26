@@ -123,24 +123,22 @@ class Seq2SeqModel(object):
       cell = tf.nn.rnn_cell.MultiRNNCell([single_cell] * num_layers)
 
     def encoder_f(encoder_inputs):
-      return seq2seq.embedding_attention_encoder(
+      return seq2seq.embedding_encoder(
           encoder_inputs,
           cell,
           num_encoder_symbols=source_vocab_size,
           embedding_size=size,
           dtype=dtype)
 
-    def decoder_f(encoder_state, attention_states, decoder_inputs, do_decode):
-      return seq2seq.embedding_attention_projection_decoder(
-           encoder_state,
-           attention_states,
-           decoder_inputs,
-           cell,
-           num_decoder_symbols=target_vocab_size,
-           embedding_size=size,
-           output_projection=output_projection,
-           feed_previous=do_decode,
-           dtype=dtype)
+    def decoder_f(encoder_state, decoder_inputs, do_decode):
+      return seq2seq.embedding_rnn_decoder(
+          decoder_inputs,
+          encoder_state,
+          cell,
+          num_symbols=target_vocab_size,
+          embedding_size=size,
+          output_projection=output_projection,
+          feed_previous=do_decode)
 
     # The seq2seq function: we use embedding for the input and attention.
     def seq2seq_f(encoder_inputs, decoder_inputs, do_decode):
@@ -176,7 +174,7 @@ class Seq2SeqModel(object):
     if forward_only:
       self.outputs, self.losses = seq2seq.autoencoder_with_buckets(
           self.encoder_inputs, self.decoder_inputs, targets,
-          self.target_weights, buckets, encoder_f, lambda x, y, z: decoder_f(x, y, z, True),
+          self.target_weights, buckets, encoder_f, lambda x, y: decoder_f(x, y, True),
           softmax_loss_function=softmax_loss_function)
       # If we use output projection, we need to project outputs for decoding.
       if output_projection is not None:
@@ -189,7 +187,7 @@ class Seq2SeqModel(object):
       self.outputs, self.losses = seq2seq.autoencoder_with_buckets(
           self.encoder_inputs, self.decoder_inputs, targets,
           self.target_weights, buckets, encoder_f,
-          lambda x, y, z: decoder_f(x, y, z, False),
+          lambda x, y: decoder_f(x, y, False),
           softmax_loss_function=softmax_loss_function)
 
     for b in xrange(len(buckets)):
