@@ -1039,14 +1039,32 @@ def embedding_attention_projection_decoder(encoder_state,
         It is a 2D Tensor of shape [batch_size x cell.state_size].
   """
 
-    # Decoder.
-    output_size = None
-    if output_projection is None:
-      cell = rnn_cell.OutputProjectionWrapper(cell, num_decoder_symbols)
-      output_size = num_decoder_symbols
+  # Decoder.
+  output_size = None
+  if output_projection is None:
+    cell = rnn_cell.OutputProjectionWrapper(cell, num_decoder_symbols)
+    output_size = num_decoder_symbols
 
-    if isinstance(feed_previous, bool):
-      return embedding_attention_decoder(
+  if isinstance(feed_previous, bool):
+    return embedding_attention_decoder(
+        decoder_inputs,
+        encoder_state,
+        attention_states,
+        cell,
+        num_decoder_symbols,
+        embedding_size,
+        num_heads=num_heads,
+        output_size=output_size,
+        output_projection=output_projection,
+        feed_previous=feed_previous,
+        initial_state_attention=initial_state_attention)
+
+  # If feed_previous is a Tensor, we construct 2 graphs and use cond.
+  def decoder(feed_previous_bool):
+    reuse = None if feed_previous_bool else True
+    with variable_scope.variable_scope(
+        variable_scope.get_variable_scope(), reuse=reuse) as scope:
+      outputs, state = embedding_attention_decoder(
           decoder_inputs,
           encoder_state,
           attention_states,
@@ -1056,49 +1074,31 @@ def embedding_attention_projection_decoder(encoder_state,
           num_heads=num_heads,
           output_size=output_size,
           output_projection=output_projection,
-          feed_previous=feed_previous,
+          feed_previous=feed_previous_bool,
+          update_embedding_for_previous=False,
           initial_state_attention=initial_state_attention)
+      state_list = [state]
+      if nest.is_sequence(state):
+        state_list = nest.flatten(state)
+      return outputs + state_list
 
-    # If feed_previous is a Tensor, we construct 2 graphs and use cond.
-    def decoder(feed_previous_bool):
-      reuse = None if feed_previous_bool else True
-      with variable_scope.variable_scope(
-          variable_scope.get_variable_scope(), reuse=reuse) as scope:
-        outputs, state = embedding_attention_decoder(
-            decoder_inputs,
-            encoder_state,
-            attention_states,
-            cell,
-            num_decoder_symbols,
-            embedding_size,
-            num_heads=num_heads,
-            output_size=output_size,
-            output_projection=output_projection,
-            feed_previous=feed_previous_bool,
-            update_embedding_for_previous=False,
-            initial_state_attention=initial_state_attention)
-        state_list = [state]
-        if nest.is_sequence(state):
-          state_list = nest.flatten(state)
-        return outputs + state_list
-
-    outputs_and_state = control_flow_ops.cond(feed_previous,
-                                              lambda: decoder(True),
-                                              lambda: decoder(False))
-    outputs_len = len(decoder_inputs)  # Outputs length same as decoder inputs.
-    state_list = outputs_and_state[outputs_len:]
-    state = state_list[0]
-    if nest.is_sequence(encoder_state):
-      state = nest.pack_sequence_as(structure=encoder_state,
-                                    flat_sequence=state_list)
-    return outputs_and_state[:outputs_len], state
+  outputs_and_state = control_flow_ops.cond(feed_previous,
+                                            lambda: decoder(True),
+                                            lambda: decoder(False))
+  outputs_len = len(decoder_inputs)  # Outputs length same as decoder inputs.
+  state_list = outputs_and_state[outputs_len:]
+  state = state_list[0]
+  if nest.is_sequence(encoder_state):
+    state = nest.pack_sequence_as(structure=encoder_state,
+                                  flat_sequence=state_list)
+  return outputs_and_state[:outputs_len], state
 
 def embedding_attention_encoder(encoder_inputs,
                                 cell,
                                 num_encoder_symbols,
                                 embedding_size,
                                 dtype=None,
-                                scope=None)
+                                scope=None):
   """Embedding sequence-to-sequence model with attention.
 
   This model first embeds encoder_inputs by a newly created embedding (of shape
@@ -1295,7 +1295,7 @@ def model_with_buckets(encoder_inputs, decoder_inputs, targets, weights,
     for j, bucket in enumerate(buckets):
       with variable_scope.variable_scope(variable_scope.get_variable_scope(),
                                          reuse=True if j > 0 else None):
-        bucket_outputs, _ = seq2seq(encoder_inputs[:bucket[0]], #bucket[0]之後就都是pad的東西了
+        bucket_outputs, _ = seq2seq(encoder_inputs[:bucket[0]],
                                     decoder_inputs[:bucket[1]])
         outputs.append(bucket_outputs)
         if per_example_loss:
@@ -1365,7 +1365,7 @@ def autoencoder_with_buckets(encoder_inputs, decoder_inputs, targets, weights,
       with variable_scope.variable_scope(variable_scope.get_variable_scope(),
                                          reuse=True if j > 0 else None):
         encoder_state, attention_states = encoder(encoder_inputs[:bucket[0]])
-        bucket_outputs, _ = decoder(encoder_state, attention_states)
+        bucket_outputs, _ = decoder(encoder_state, attention_states, decoder_inputs[:bucket[1]])
         outputs.append(bucket_outputs)
         if per_example_loss:
           losses.append(sequence_loss_by_example(

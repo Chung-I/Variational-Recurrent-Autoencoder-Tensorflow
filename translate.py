@@ -60,6 +60,7 @@ tf.app.flags.DEFINE_integer("en_vocab_size", 10000, "English vocabulary size.")
 tf.app.flags.DEFINE_integer("fr_vocab_size", 10000, "French vocabulary size.")
 tf.app.flags.DEFINE_string("data_dir", "corpus", "Data directory")
 tf.app.flags.DEFINE_string("train_dir", "models", "Training directory.")
+tf.app.flags.DEFINE_string("ckpt_name", "translate", "checkpoint file name.")
 tf.app.flags.DEFINE_integer("max_train_data_size", 0,
                             "Limit on the size of training data (0: no limit).")
 tf.app.flags.DEFINE_integer("steps_per_checkpoint", 200,
@@ -207,7 +208,7 @@ def train():
             sess.run(model.learning_rate_decay_op)
         previous_losses.append(loss)
         # Save checkpoint and zero timer and loss.
-        checkpoint_path = os.path.join(FLAGS.train_dir, "translate.ckpt")
+        checkpoint_path = os.path.join(FLAGS.train_dir, FLAGS.ckpt_name + ".ckpt")
         model.saver.save(sess, checkpoint_path, global_step=model.global_step)
         step_time, loss = 0.0, 0.0
         # Run evals on development set and print their perplexity.
