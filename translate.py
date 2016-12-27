@@ -60,7 +60,7 @@ tf.app.flags.DEFINE_integer("en_vocab_size", 10000, "English vocabulary size.")
 tf.app.flags.DEFINE_integer("fr_vocab_size", 10000, "French vocabulary size.")
 tf.app.flags.DEFINE_string("data_dir", "corpus", "Data directory")
 tf.app.flags.DEFINE_string("train_dir", "models", "Training directory.")
-tf.app.flags.DEFINE_string("ckpt_name", "translate", "checkpoint file name.")
+tf.app.flags.DEFINE_string("ckpt", "translate", "checkpoint file name.")
 tf.app.flags.DEFINE_integer("max_train_data_size", 0,
                             "Limit on the size of training data (0: no limit).")
 tf.app.flags.DEFINE_integer("steps_per_checkpoint", 200,
@@ -156,8 +156,11 @@ def train():
       FLAGS.data_dir, FLAGS.en_vocab_size, FLAGS.fr_vocab_size)
 
   with tf.Session() as sess:
-    train_writer = tf.summary.FileWriter(FLAGS.train_dir, graph=sess.graph)
-    dev_writer = tf.summary.FileWriter(FLAGS.train_dir, graph=sess.graph)
+    event_dir = FLAGS.train_dir + "/" + FLAGS.ckpt
+    if not os.path.exists(event_dir):
+      os.makedirs(event_dir)
+    train_writer = tf.summary.FileWriter(event_dir+ "/train", graph=sess.graph)
+    dev_writer = tf.summary.FileWriter(event_dir + "/test", graph=sess.graph)
 
     # Create model.
     print("Creating %d layers of %d units." % (FLAGS.num_layers, FLAGS.size))
@@ -179,8 +182,9 @@ def train():
 
     # This is the training loop.
     step_time, loss = 0.0, 0.0
-    current_step = 0
+    current_step = model.global_step.eval()
     previous_losses = []
+    step_loss_summaries = []
     while True:
       # Choose a bucket according to data distribution. We pick a random number
       # in [0, 1] and use the corresponding interval in train_buckets_scale.
@@ -194,12 +198,10 @@ def train():
           train_set, bucket_id)
       _, step_loss, _ = model.step(sess, encoder_inputs, decoder_inputs,
                                    target_weights, bucket_id, False)
-      train_writer.add_summary(loss_summary, current_step)
       step_time += (time.time() - start_time) / FLAGS.steps_per_checkpoint
-      step_loss_summary = tf.Summary(value=[tf.Summary.Value(tag="step loss", simple_value=step_loss)])
-      train_writer.add_summary(step_loss_summary, current_step)
+      step_loss_summaries.append(tf.Summary(value=[tf.Summary.Value(tag="step loss", simple_value=float(step_loss))]))
       loss += step_loss / FLAGS.steps_per_checkpoint
-      current_step += 1
+      current_step = model.global_step.eval()
 
       # Once in a while, we save checkpoint, print statistics, and run evals.
       if current_step % FLAGS.steps_per_checkpoint == 0:
@@ -208,15 +210,18 @@ def train():
         print ("global step %d learning rate %.4f step-time %.2f perplexity "
                "%.2f" % (model.global_step.eval(), model.learning_rate.eval(),
                          step_time, perplexity))
-        perp_summary = tf.Summary(value=[tf.Summary.Value(tag="train perplexity", simple_value=perplexiy)])
+        perp_summary = tf.Summary(value=[tf.Summary.Value(tag="train perplexity", simple_value=perplexity)])
         train_writer.add_summary(perp_summary, current_step)
+        for i, summary in enumerate(step_loss_summaries):
+          train_writer.add_summary(summary, current_step - 200 + i)
+        step_loss_summaries = []
         # Decrease learning rate if no improvement was seen over last 3 times.
         if not FLAGS.adam:
           if len(previous_losses) > 2 and loss > max(previous_losses[-3:]):
             sess.run(model.learning_rate_decay_op)
         previous_losses.append(loss)
         # Save checkpoint and zero timer and loss.
-        checkpoint_path = os.path.join(FLAGS.train_dir, FLAGS.ckpt_name + ".ckpt")
+        checkpoint_path = os.path.join(FLAGS.train_dir, FLAGS.ckpt + ".ckpt")
         model.saver.save(sess, checkpoint_path, global_step=model.global_step)
         step_time, loss = 0.0, 0.0
         # Run evals on development set and print their perplexity.
@@ -228,13 +233,13 @@ def train():
               dev_set, bucket_id)
           _, eval_loss, _ = model.step(sess, encoder_inputs, decoder_inputs,
                                        target_weights, bucket_id, True)
-          eval_loss_summary = tf.Summary(value=[tf.Summary.Value(tag="eval loss", simple_value=eval_loss)])
+          eval_loss_summary = tf.Summary(value=[tf.Summary.Value(tag="eval loss", simple_value=float(eval_loss))])
           dev_writer.add_summary(eval_loss_summary, current_step)
 
           eval_ppx = math.exp(float(eval_loss)) if eval_loss < 300 else float(
               "inf")
           print("  eval: bucket %d perplexity %.2f" % (bucket_id, eval_ppx))
-          eval_perp_summary = tf.Summary(value=[tf.Summary.Value(tag="eval perplexity", simple_value=eval_ppx)])
+          eval_perp_summary = tf.Summary(value=[tf.Summary.Value(tag="eval perplexity for bucket {0}".format(bucket_id), simple_value=eval_ppx)])
           dev_writer.add_summary(eval_perp_summary, current_step)
         sys.stdout.flush()
 
@@ -274,7 +279,7 @@ def decode():
       encoder_inputs, decoder_inputs, target_weights = model.get_batch(
           {bucket_id: [(token_ids, [])]}, bucket_id)
       # Get output logits for the sentence.
-      _, _, output_logits, _ = model.step(sess, encoder_inputs, decoder_inputs,
+      _, _, output_logits = model.step(sess, encoder_inputs, decoder_inputs,
                                        target_weights, bucket_id, True)
       # This is a greedy decoder - outputs are just argmaxes of output_logits.
       outputs = [int(np.argmax(logit, axis=1)) for logit in output_logits]
