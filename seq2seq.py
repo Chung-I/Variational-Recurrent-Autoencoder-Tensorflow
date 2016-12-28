@@ -1211,7 +1211,7 @@ def embedding_encoder(encoder_inputs,
         It is a 2D Tensor of shape [batch_size x cell.state_size].
   """
   with variable_scope.variable_scope(
-      scope or "embedding_attention_encoder", dtype=dtype) as scope:
+      scope or "embedding_encoder", dtype=dtype) as scope:
     dtype = scope.dtype
     # Encoder.
     encoder_cell = rnn_cell.EmbeddingWrapper(

@@ -3,3 +3,6 @@ corpus
 models
 input.txt
 output.txt
+nohup.out
+serialize
+serialize_tensorboard.py

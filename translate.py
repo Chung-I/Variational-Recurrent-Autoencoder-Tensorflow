@@ -45,6 +45,7 @@ import tensorflow as tf
 import data_utils
 import seq2seq_model
 from tensorflow.python.platform import gfile
+from tensorflow.contrib.tensorboard.plugins import projector
 
 
 tf.app.flags.DEFINE_float("learning_rate", 0.5, "Learning rate.")
@@ -77,6 +78,7 @@ tf.app.flags.DEFINE_boolean("new", True,
                             "Train a new model.")
 
 FLAGS = tf.app.flags.FLAGS
+
 
 # We use a number of buckets and pad to the closest one for efficiency.
 # See seq2seq_model.Seq2SeqModel for details of how they work.
@@ -138,7 +140,7 @@ def create_model(session, forward_only):
       optimizer=optimizer,
       forward_only=forward_only,
       dtype=dtype)
-  ckpt = tf.train.get_checkpoint_state(FLAGS.train_dir)
+  ckpt = tf.train.get_checkpoint_state(FLAGS.model_dir)
   if not FLAGS.new and ckpt and tf.train.checkpoint_exists(ckpt.model_checkpoint_path):
     print("Reading model parameters from %s" % ckpt.model_checkpoint_path)
     model.saver.restore(session, ckpt.model_checkpoint_path)
@@ -156,11 +158,10 @@ def train():
       FLAGS.data_dir, FLAGS.en_vocab_size, FLAGS.fr_vocab_size)
 
   with tf.Session() as sess:
-    event_dir = FLAGS.train_dir + "/" + FLAGS.ckpt
-    if not os.path.exists(event_dir):
-      os.makedirs(event_dir)
-    train_writer = tf.summary.FileWriter(event_dir+ "/train", graph=sess.graph)
-    dev_writer = tf.summary.FileWriter(event_dir + "/test", graph=sess.graph)
+    if not os.path.exists(FLAGS.model_dir):
+      os.makedirs(FLAGS.model_dir)
+    train_writer = tf.summary.FileWriter(FLAGS.model_dir+ "/train", graph=sess.graph)
+    dev_writer = tf.summary.FileWriter(FLAGS.model_dir + "/test", graph=sess.graph)
 
     # Create model.
     print("Creating %d layers of %d units." % (FLAGS.num_layers, FLAGS.size))
@@ -221,26 +222,33 @@ def train():
             sess.run(model.learning_rate_decay_op)
         previous_losses.append(loss)
         # Save checkpoint and zero timer and loss.
-        checkpoint_path = os.path.join(FLAGS.train_dir, FLAGS.ckpt + ".ckpt")
+        checkpoint_path = os.path.join(FLAGS.model_dir, FLAGS.ckpt + ".ckpt")
         model.saver.save(sess, checkpoint_path, global_step=model.global_step)
         step_time, loss = 0.0, 0.0
         # Run evals on development set and print their perplexity.
+        eval_losses = []
+        eval_bucket_num = 0
         for bucket_id in xrange(len(_buckets)):
           if len(dev_set[bucket_id]) == 0:
             print("  eval: empty bucket %d" % (bucket_id))
             continue
+          eval_bucket_num += 1
           encoder_inputs, decoder_inputs, target_weights = model.get_batch(
               dev_set, bucket_id)
           _, eval_loss, _ = model.step(sess, encoder_inputs, decoder_inputs,
                                        target_weights, bucket_id, True)
-          eval_loss_summary = tf.Summary(value=[tf.Summary.Value(tag="eval loss", simple_value=float(eval_loss))])
-          dev_writer.add_summary(eval_loss_summary, current_step)
+          eval_losses.append(float(eval_loss))
 
           eval_ppx = math.exp(float(eval_loss)) if eval_loss < 300 else float(
               "inf")
           print("  eval: bucket %d perplexity %.2f" % (bucket_id, eval_ppx))
           eval_perp_summary = tf.Summary(value=[tf.Summary.Value(tag="eval perplexity for bucket {0}".format(bucket_id), simple_value=eval_ppx)])
           dev_writer.add_summary(eval_perp_summary, current_step)
+        mean_eval_loss = sum(eval_losses) / float(eval_bucket_num)
+        mean_eval_ppx = math.exp(float(mean_eval_loss))
+        print("  eval: mean perplexity {0}".format(mean_eval_ppx))
+        eval_loss_summary = tf.Summary(value=[tf.Summary.Value(tag="mean eval loss", simple_value=float(mean_eval_ppx))])
+        dev_writer.add_summary(eval_loss_summary, current_step)
         sys.stdout.flush()
 
 
@@ -316,6 +324,7 @@ def self_test():
 
 
 def main(_):
+  FLAGS.model_dir = FLAGS.train_dir + "/" + FLAGS.ckpt
   if FLAGS.self_test:
     self_test()
   elif FLAGS.decode:
