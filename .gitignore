@@ -2,6 +2,7 @@ __pycache__
 corpus
 models
 input.txt
+*output.txt
 output.txt
 nohup.out
 serialize
