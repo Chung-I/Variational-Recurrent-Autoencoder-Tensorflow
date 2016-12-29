@@ -150,7 +150,7 @@ class Seq2SeqModel(object):
            num_layers=num_layers)
 
     def enc_latent_f(encoder_state):
-      return seq2seq.latent_to_decoder(encoder_state,
+      return seq2seq.encoder_to_latent(encoder_state,
                      embedding_size=size,
                      latent_dim=latent_dim,
                      num_layers=num_layers)

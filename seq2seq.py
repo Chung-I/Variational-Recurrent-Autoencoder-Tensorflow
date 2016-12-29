@@ -1445,7 +1445,7 @@ def encoder_to_latent(encoder_state,
                       embedding_size,
                       latent_dim,
                       num_layers):
-  
+  print("encoder_to_latent") 
   if num_layers > 1:
     encoder_state = tf.concat(1, encoder_state)
   with tf.variable_scope('encoder_to_latent'):
@@ -1467,6 +1467,7 @@ def latent_to_decoder(latent_vector,
                       latent_dim,
                       num_layers):
 
+  print("latent_to_decoder") 
   with tf.variable_scope('latent_to_decoder'):
     w = tf.get_variable("w",[latent_dim, num_layers * embedding_size],
       dtype=dtype)
@@ -1528,7 +1529,8 @@ def variational_autoencoder_with_buckets(encoder_inputs, decoder_inputs, targets
   all_inputs = encoder_inputs + decoder_inputs + targets + weights
   losses = []
   outputs = []
-  with ops.name_scope(name, "model_with_buckets", all_inputs):
+  print("variational_autoencoder_with_buckets")
+  with ops.name_scope(name, "variational_autoencoder_with_buckets", all_inputs):
     for j, bucket in enumerate(buckets):
       with variable_scope.variable_scope(variable_scope.get_variable_scope(),
                                          reuse=True if j > 0 else None):
