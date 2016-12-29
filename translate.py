@@ -77,6 +77,8 @@ tf.app.flags.DEFINE_boolean("use_fp16", False,
                             "Train using fp16 instead of fp32.")
 tf.app.flags.DEFINE_boolean("new", True,
                             "Train a new model.")
+tf.app.flags.DEFINE_boolean("feed_previous", False,
+                            "if True, inputs are feeded with last output.")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -138,6 +140,7 @@ def create_model(session, forward_only):
       FLAGS.batch_size,
       FLAGS.learning_rate,
       FLAGS.learning_rate_decay_factor,
+      FLAGS.feed_previous,
       optimizer=optimizer,
       forward_only=forward_only,
       dtype=dtype)

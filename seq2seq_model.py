@@ -57,6 +57,7 @@ class Seq2SeqModel(object):
                num_samples=512,
                optimizer=None,
                forward_only=False,
+               feed_previous=False,
                dtype=tf.float32):
     """Create the model.
 
@@ -187,7 +188,7 @@ class Seq2SeqModel(object):
       self.outputs, self.losses = seq2seq.autoencoder_with_buckets(
           self.encoder_inputs, self.decoder_inputs, targets,
           self.target_weights, buckets, encoder_f,
-          lambda x, y: decoder_f(x, y, False),
+          lambda x, y: decoder_f(x, y, feed_previous),
           softmax_loss_function=softmax_loss_function)
 
     # Gradients and SGD update operation for training the model.
