@@ -37,6 +37,7 @@ import random
 import sys
 import time
 import logging
+import json
 
 import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
@@ -162,16 +163,23 @@ def train():
       os.makedirs(FLAGS.model_dir)
     train_writer = tf.summary.FileWriter(FLAGS.model_dir+ "/train", graph=sess.graph)
     dev_writer = tf.summary.FileWriter(FLAGS.model_dir + "/test", graph=sess.graph)
+
+    stat_file_name = "stats/" + FLAGS.ckpt + ".json" 
     if FLAGS.new:
-      stats_file_name = "stats/" + FLAGS.ckpt + ".json" 
       if os.path.exists(stat_file_name):
         print("error: create an already existed statistics file")
         sys.exit()
       stats = {}
-      stats = FLAGS
-      stats["model_name"] = FLAGS.ckpt  
-      with gfile.GFile(stat_file_name, "w") as statfile:
-        statfile.write(json.dump(stats))
+      stats['hyperparameters'] = FLAGS.__dict__['__flags']
+      stats['model_name'] = stats['hyperparameters']['ckpt']
+      stats['train_perplexity'] = {}
+      stats['eval_perplexity'] = {}
+      with open(stat_file_name, "w") as statfile:
+        statfile.write(json.dumps(stats))
+    else:
+      with open(stat_file_name, "r") as statfile:
+        statjson = statfile.read()
+        stats = json.loads(statjson)
 
 
     # Create model.
@@ -219,6 +227,7 @@ def train():
       if current_step % FLAGS.steps_per_checkpoint == 0:
         # Print statistics for the previous epoch.
         perplexity = math.exp(float(loss)) if loss < 300 else float("inf")
+        stats['train_perplexity'][str(current_step)] = perplexity
         print ("global step %d learning rate %.4f step-time %.2f perplexity "
                "%.2f" % (model.global_step.eval(), model.learning_rate.eval(),
                          step_time, perplexity))
@@ -258,8 +267,11 @@ def train():
         mean_eval_loss = sum(eval_losses) / float(eval_bucket_num)
         mean_eval_ppx = math.exp(float(mean_eval_loss))
         print("  eval: mean perplexity {0}".format(mean_eval_ppx))
+        stats['eval_perplexity'][str(current_step)] = mean_eval_ppx
         eval_loss_summary = tf.Summary(value=[tf.Summary.Value(tag="mean eval loss", simple_value=float(mean_eval_ppx))])
         dev_writer.add_summary(eval_loss_summary, current_step)
+        with open(stat_file_name, "w") as statfile:
+          statfile.write(json.dumps(stats))
         sys.stdout.flush()
 
 
