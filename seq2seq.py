@@ -73,6 +73,7 @@ from tensorflow.python.ops import rnn
 from tensorflow.python.ops import rnn_cell
 from tensorflow.python.ops import variable_scope
 from tensorflow.python.util import nest
+import tensorflow as tf
 
 # TODO(ebrevdo): Remove once _linear is fully deprecated.
 linear = rnn_cell._linear  # pylint: disable=protected-access
@@ -1444,7 +1445,8 @@ def autoencoder_with_buckets(encoder_inputs, decoder_inputs, targets, weights,
 def encoder_to_latent(encoder_state,
                       embedding_size,
                       latent_dim,
-                      num_layers):
+                      num_layers,
+                      dtype=None):
   print("encoder_to_latent") 
   if num_layers > 1:
     encoder_state = tf.concat(1, encoder_state)
@@ -1465,7 +1467,8 @@ def encoder_to_latent(encoder_state,
 def latent_to_decoder(latent_vector,
                       embedding_size,
                       latent_dim,
-                      num_layers):
+                      num_layers,
+                      dtype=None):
 
   print("latent_to_decoder") 
   with tf.variable_scope('latent_to_decoder'):

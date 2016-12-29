@@ -147,13 +147,15 @@ class Seq2SeqModel(object):
       return seq2seq.latent_to_decoder(latent_vector,
            embedding_size=size,
            latent_dim=latent_dim,
-           num_layers=num_layers)
+           num_layers=num_layers,
+           dtype=dtype)
 
     def enc_latent_f(encoder_state):
       return seq2seq.encoder_to_latent(encoder_state,
                      embedding_size=size,
                      latent_dim=latent_dim,
-                     num_layers=num_layers)
+                     num_layers=num_layers,
+                     dtype=dtype)
 
     # The seq2seq function: we use embedding for the input and attention.
     def seq2seq_f(encoder_inputs, decoder_inputs, do_decode):

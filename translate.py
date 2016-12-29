@@ -38,6 +38,7 @@ import sys
 import time
 import logging
 import json
+import pdb
 
 import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
@@ -144,10 +145,10 @@ def create_model(session, forward_only):
       FLAGS.batch_size,
       FLAGS.learning_rate,
       FLAGS.learning_rate_decay_factor,
-      FLAGS.feed_previous,
-      FLAGS.variational,
       optimizer=optimizer,
+      variational=FLAGS.variational,
       forward_only=forward_only,
+      feed_previous=FLAGS.feed_previous,
       dtype=dtype)
   print(FLAGS.model_dir)
   ckpt = tf.train.get_checkpoint_state(FLAGS.model_dir)
@@ -188,7 +189,6 @@ def train():
       with open(stat_file_name, "r") as statfile:
         statjson = statfile.read()
         stats = json.loads(statjson)
-
 
     # Create model.
     print("Creating %d layers of %d units." % (FLAGS.num_layers, FLAGS.size))
