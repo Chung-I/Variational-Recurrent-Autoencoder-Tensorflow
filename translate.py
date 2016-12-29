@@ -48,7 +48,7 @@ from tensorflow.python.platform import gfile
 from tensorflow.contrib.tensorboard.plugins import projector
 
 
-tf.app.flags.DEFINE_float("learning_rate", 0.5, "Learning rate.")
+tf.app.flags.DEFINE_float("learning_rate", 0.001, "Learning rate.")
 tf.app.flags.DEFINE_float("learning_rate_decay_factor", 0.99,
                           "Learning rate decays by this much.")
 tf.app.flags.DEFINE_float("max_gradient_norm", 5.0,
@@ -126,7 +126,7 @@ def read_data(source_path, target_path, max_size=None):
 def create_model(session, forward_only):
   """Create translation model and initialize or load parameters in session."""
   dtype = tf.float16 if FLAGS.use_fp16 else tf.float32
-  optimizer = tf.train.AdamOptimizer() if FLAGS.adam else None
+  optimizer = tf.train.AdamOptimizer(FLAGS.learning_rate) if FLAGS.adam else None
   model = seq2seq_model.Seq2SeqModel(
       FLAGS.en_vocab_size,
       FLAGS.fr_vocab_size,
@@ -150,7 +150,6 @@ def create_model(session, forward_only):
     session.run(tf.global_variables_initializer())
   return model
 
-
 def train():
   """Train a en->fr translation model using WMT data."""
   # Prepare WMT data.
@@ -163,6 +162,17 @@ def train():
       os.makedirs(FLAGS.model_dir)
     train_writer = tf.summary.FileWriter(FLAGS.model_dir+ "/train", graph=sess.graph)
     dev_writer = tf.summary.FileWriter(FLAGS.model_dir + "/test", graph=sess.graph)
+    if FLAGS.new:
+      stats_file_name = "stats/" + FLAGS.ckpt + ".json" 
+      if os.path.exists(stat_file_name):
+        print("error: create an already existed statistics file")
+        sys.exit()
+      stats = {}
+      stats = FLAGS
+      stats["model_name"] = FLAGS.ckpt  
+      with gfile.GFile(stat_file_name, "w") as statfile:
+        statfile.write(json.dump(stats))
+
 
     # Create model.
     print("Creating %d layers of %d units." % (FLAGS.num_layers, FLAGS.size))
