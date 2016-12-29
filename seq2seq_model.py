@@ -197,7 +197,7 @@ class Seq2SeqModel(object):
     # Training outputs and losses.
     if forward_only:
       if variational:
-        self.outputs, self.losses = seq2seq.variational_autoencoder_with_buckets(
+        self.outputs, self.losses, self.KL_divergences = seq2seq.variational_autoencoder_with_buckets(
             self.encoder_inputs, self.decoder_inputs, targets,
             self.target_weights, buckets, encoder_f, lambda x, y: decoder_f(x, y, True),
             enc_latent_f, latent_dec_f, sample_f,
@@ -216,7 +216,7 @@ class Seq2SeqModel(object):
           ]
     else:
       if variational:
-        self.outputs, self.losses = seq2seq.variational_autoencoder_with_buckets(
+        self.outputs, self.losses, self.KL_divergences = seq2seq.variational_autoencoder_with_buckets(
             self.encoder_inputs, self.decoder_inputs, targets,
             self.target_weights, buckets, encoder_f,
             lambda x, y: decoder_f(x, y, feed_previous),
@@ -236,7 +236,7 @@ class Seq2SeqModel(object):
       if not optimizer:
         optimizer = tf.train.GradientDescentOptimizer(self.learning_rate)
       for b in xrange(len(buckets)):
-        gradients = tf.gradients(self.losses[b], params)
+        gradients = tf.gradients(self.losses[b] + self.KL_divergences[b], params)
         clipped_gradients, norm = tf.clip_by_global_norm(gradients,
                                                          max_gradient_norm)
         self.gradient_norms.append(norm)
@@ -293,17 +293,18 @@ class Seq2SeqModel(object):
     if not forward_only:
       output_feed = [self.updates[bucket_id],  # Update Op that does SGD.
                      self.gradient_norms[bucket_id],  # Gradient norm.
-                     self.losses[bucket_id]]  # Loss for this batch.
+                     self.losses[bucket_id],
+                     self.KL_divergences[bucket_id]]  # Loss for this batch.
     else:
-      output_feed = [self.losses[bucket_id]]  # Loss for this batch.
+      output_feed = [self.losses[bucket_id], self.KL_divergences[bucket_id]]  # Loss for this batch.
       for l in xrange(decoder_size):  # Output logits.
         output_feed.append(self.outputs[bucket_id][l])
 
     outputs = session.run(output_feed, input_feed)
     if not forward_only:
-      return outputs[1], outputs[2], None  # summaries, Gradient norm, loss, no outputs.
+      return outputs[1], outputs[2], outputs[3], None  # Gradient norm, loss, KL divergence, no outputs.
     else:
-        return None, outputs[0], outputs[1:]  # summaries, no gradient norm, loss, outputs.
+        return None, outputs[0], outputs[1], outputs[2:]  # summaries, no gradient norm, loss, outputs.
 
   def get_batch(self, data, bucket_id):
     """Get a random batch of data from the specified bucket, prepare for step.

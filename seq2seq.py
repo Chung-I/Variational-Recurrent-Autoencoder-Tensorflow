@@ -1305,6 +1305,9 @@ def sequence_loss(logits, targets, weights,
       return cost
 
 
+def KL_divergence(mean, logvar):
+  return -tf.reduce_sum(0.5 * (2 * logvar - tf.square(mean) - tf.exp(2 * logvar) + 1.0), 1)
+
 def model_with_buckets(encoder_inputs, decoder_inputs, targets, weights,
                        buckets, seq2seq, softmax_loss_function=None,
                        per_example_loss=False, name=None):
@@ -1546,6 +1549,7 @@ def variational_autoencoder_with_buckets(encoder_inputs, decoder_inputs, targets
   all_inputs = encoder_inputs + decoder_inputs + targets + weights
   losses = []
   outputs = []
+  KL_divergences = []
   print("variational_autoencoder_with_buckets")
   with ops.name_scope(name, "variational_autoencoder_with_buckets", all_inputs):
     for j, bucket in enumerate(buckets):
@@ -1557,6 +1561,7 @@ def variational_autoencoder_with_buckets(encoder_inputs, decoder_inputs, targets
         decoder_initial_state = latent_dec(latent_vector)
         bucket_outputs, _ = decoder(decoder_initial_state, decoder_inputs[:bucket[1]])
         outputs.append(bucket_outputs)
+        KL_divergences.append(KL_divergence(mean, logvar) / math.add_n(weights))
         if per_example_loss:
           losses.append(sequence_loss_by_example(
               outputs[-1], targets[:bucket[1]], weights[:bucket[1]],
@@ -1566,4 +1571,4 @@ def variational_autoencoder_with_buckets(encoder_inputs, decoder_inputs, targets
               outputs[-1], targets[:bucket[1]], weights[:bucket[1]],
               softmax_loss_function=softmax_loss_function))
 
-  return outputs, losses
+  return outputs, losses, KL_divergences

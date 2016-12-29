@@ -210,9 +210,11 @@ def train():
 
     # This is the training loop.
     step_time, loss = 0.0, 0.0
+    KL_loss = 0.0
     current_step = model.global_step.eval()
     previous_losses = []
     step_loss_summaries = []
+    step_KL_loss_summaries = []
     while True:
       # Choose a bucket according to data distribution. We pick a random number
       # in [0, 1] and use the corresponding interval in train_buckets_scale.
@@ -224,11 +226,13 @@ def train():
       start_time = time.time()
       encoder_inputs, decoder_inputs, target_weights = model.get_batch(
           train_set, bucket_id)
-      _, step_loss, _ = model.step(sess, encoder_inputs, decoder_inputs,
+      _, step_loss, step_KL_loss, _ = model.step(sess, encoder_inputs, decoder_inputs,
                                    target_weights, bucket_id, False)
       step_time += (time.time() - start_time) / FLAGS.steps_per_checkpoint
       step_loss_summaries.append(tf.Summary(value=[tf.Summary.Value(tag="step loss", simple_value=float(step_loss))]))
+      step_KL_loss_summaries.append(tf.Summary(value=[tf.Summary.Value(tag="KL step loss", simple_value=float(step_KL_loss))]))
       loss += step_loss / FLAGS.steps_per_checkpoint
+      KL_loss += step_KL_loss / FLAGS.steps_per_checkpoint
       current_step = model.global_step.eval()
 
       # Once in a while, we save checkpoint, print statistics, and run evals.
@@ -239,11 +243,22 @@ def train():
         print ("global step %d learning rate %.4f step-time %.2f perplexity "
                "%.2f" % (model.global_step.eval(), model.learning_rate.eval(),
                          step_time, perplexity))
+
+        stats['KL_divergence'][str(current_step)] = KL_loss
+        print ("global step %d learning rate %.4f step-time %.2f KL divergence "
+               "%.2f" % (model.global_step.eval(), model.learning_rate.eval(),
+                         step_time, KL_loss))
+
         perp_summary = tf.Summary(value=[tf.Summary.Value(tag="train perplexity", simple_value=perplexity)])
         train_writer.add_summary(perp_summary, current_step)
+        KL_loss_summary = tf.Summary(value=[tf.Summary.Value(tag="KL divergence", simple_value=KL_loss)])
+        train_writer.add_summary(KL_loss_summary, current_step)
         for i, summary in enumerate(step_loss_summaries):
           train_writer.add_summary(summary, current_step - 200 + i)
         step_loss_summaries = []
+        for i, summary in enumerate(step_KL_loss_summaries):
+          train_writer.add_summary(summary, current_step - 200 + i)
+        step_KL_loss_summaries = []
         # Decrease learning rate if no improvement was seen over last 3 times.
         if not FLAGS.adam:
           if len(previous_losses) > 2 and loss > max(previous_losses[-3:]):
