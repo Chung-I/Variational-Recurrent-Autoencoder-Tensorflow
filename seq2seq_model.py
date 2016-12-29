@@ -49,6 +49,7 @@ class Seq2SeqModel(object):
                buckets,
                size,
                num_layers,
+               latent_dim,
                max_gradient_norm,
                batch_size,
                learning_rate,
@@ -141,6 +142,18 @@ class Seq2SeqModel(object):
           output_projection=output_projection,
           feed_previous=do_decode)
 
+    def latent_dec_f(latent_vector):
+      return seq2seq.latent_to_decoder(latent_vector,
+           embedding_size=size,
+           latent_dim=latent_dim,
+           num_layers=num_layers)
+
+    def enc_latent_f(encoder_state):
+      return seq2seq.latent_to_decoder(encoder_state,
+                     embedding_size=size,
+                     latent_dim=latent_dim,
+                     num_layers=num_layers)
+
     # The seq2seq function: we use embedding for the input and attention.
     def seq2seq_f(encoder_inputs, decoder_inputs, do_decode):
       return tf.nn.seq2seq.embedding_attention_seq2seq(
@@ -176,6 +189,7 @@ class Seq2SeqModel(object):
       self.outputs, self.losses = seq2seq.autoencoder_with_buckets(
           self.encoder_inputs, self.decoder_inputs, targets,
           self.target_weights, buckets, encoder_f, lambda x, y: decoder_f(x, y, True),
+          enc_latent_f, latent_dec_f,
           softmax_loss_function=softmax_loss_function)
       # If we use output projection, we need to project outputs for decoding.
       if output_projection is not None:
@@ -189,6 +203,7 @@ class Seq2SeqModel(object):
           self.encoder_inputs, self.decoder_inputs, targets,
           self.target_weights, buckets, encoder_f,
           lambda x, y: decoder_f(x, y, feed_previous),
+          enc_latent_f, latent_dec_f,
           softmax_loss_function=softmax_loss_function)
 
     # Gradients and SGD update operation for training the model.

@@ -58,6 +58,7 @@ tf.app.flags.DEFINE_integer("batch_size", 64,
                             "Batch size to use during training.")
 tf.app.flags.DEFINE_integer("size", 128, "Size of each model layer.")
 tf.app.flags.DEFINE_integer("num_layers", 1, "Number of layers in the model.")
+tf.app.flags.DEFINE_integer("latent_dim", 64, "latent dimension.")
 tf.app.flags.DEFINE_integer("en_vocab_size", 10000, "English vocabulary size.")
 tf.app.flags.DEFINE_integer("fr_vocab_size", 10000, "French vocabulary size.")
 tf.app.flags.DEFINE_string("data_dir", "corpus", "Data directory")
@@ -136,6 +137,7 @@ def create_model(session, forward_only):
       _buckets,
       FLAGS.size,
       FLAGS.num_layers,
+      FLAGS.latent_dim,
       FLAGS.max_gradient_norm,
       FLAGS.batch_size,
       FLAGS.learning_rate,
