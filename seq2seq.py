@@ -74,6 +74,7 @@ from tensorflow.python.ops import rnn_cell
 from tensorflow.python.ops import variable_scope
 from tensorflow.python.util import nest
 import tensorflow as tf
+import pdb
 
 # TODO(ebrevdo): Remove once _linear is fully deprecated.
 linear = rnn_cell._linear  # pylint: disable=protected-access
@@ -1441,6 +1442,18 @@ def autoencoder_with_buckets(encoder_inputs, decoder_inputs, targets, weights,
 
   return outputs, losses
 
+def atomic_sample(mean_logvar, latent_dim):
+  epsilon = tf.random_normal([latent_dim])
+  mean, logvar = tf.split(0, 2, mean_logvar)
+  return tf.add(mean, tf.multiply(tf.exp(tf.multiply(0.5, logvar)), epsilon))
+
+
+def sample(mean, logvar, batch_size, latent_dim, dtype=None):
+  def atomic_sample_f(mean_logvar):
+    return atomic_sample(mean_logvar, latent_dim)
+  mean_logvar = tf.concat(1, [mean, logvar])
+  return tf.map_fn(lambda x: atomic_sample_f(x), mean_logvar)
+
 
 def encoder_to_latent(encoder_state,
                       embedding_size,
@@ -1456,13 +1469,14 @@ def encoder_to_latent(encoder_state,
         dtype=dtype)
       b = tf.get_variable("b", [latent_dim], dtype=dtype)
       mean = tf.nn.relu(tf.matmul(encoder_state, w) + b)
-    #with tf.variable_scope('logvar'):
-    #  w = tf.get_variable("w",
-    #    [num_layers * embedding_size, latent_dim], dtype=dtype)
-    #  b = tf.get_variable("b", [latent_dim], dtype=dtype)
-    #  logvar = tf.nn.relu(tf.matmul(encoder_state, w) + b)
+    with tf.variable_scope('logvar'):
+      w = tf.get_variable("w",
+        [num_layers * embedding_size, latent_dim], dtype=dtype)
+      b = tf.get_variable("b", [latent_dim], dtype=dtype)
+      logvar = tf.nn.relu(tf.matmul(encoder_state, w) + b)
 
-  return mean
+  return mean, logvar
+
 
 def latent_to_decoder(latent_vector,
                       embedding_size,
@@ -1483,7 +1497,7 @@ def latent_to_decoder(latent_vector,
 
 
 def variational_autoencoder_with_buckets(encoder_inputs, decoder_inputs, targets, weights,
-                       buckets, encoder, decoder, enc_latent, latent_dec, softmax_loss_function=None,
+                       buckets, encoder, decoder, enc_latent, latent_dec, sample, softmax_loss_function=None,
                        per_example_loss=False, name=None):
   """Create a sequence-to-sequence model with support for bucketing.
 
@@ -1538,7 +1552,8 @@ def variational_autoencoder_with_buckets(encoder_inputs, decoder_inputs, targets
       with variable_scope.variable_scope(variable_scope.get_variable_scope(),
                                          reuse=True if j > 0 else None):
         encoder_last_state = encoder(encoder_inputs[:bucket[0]])
-        latent_vector = enc_latent(encoder_last_state)
+        mean, logvar = enc_latent(encoder_last_state)
+        latent_vector = sample(mean, logvar)
         decoder_initial_state = latent_dec(latent_vector)
         bucket_outputs, _ = decoder(decoder_initial_state, decoder_inputs[:bucket[1]])
         outputs.append(bucket_outputs)

@@ -157,6 +157,13 @@ class Seq2SeqModel(object):
                      num_layers=num_layers,
                      dtype=dtype)
 
+    def sample_f(mean, logvar):
+      return seq2seq.sample(
+        mean, logvar,
+        batch_size=batch_size,
+        latent_dim=latent_dim,
+        dtype=dtype)
+
     # The seq2seq function: we use embedding for the input and attention.
     def seq2seq_f(encoder_inputs, decoder_inputs, do_decode):
       return tf.nn.seq2seq.embedding_attention_seq2seq(
@@ -193,7 +200,7 @@ class Seq2SeqModel(object):
         self.outputs, self.losses = seq2seq.variational_autoencoder_with_buckets(
             self.encoder_inputs, self.decoder_inputs, targets,
             self.target_weights, buckets, encoder_f, lambda x, y: decoder_f(x, y, True),
-            enc_latent_f, latent_dec_f,
+            enc_latent_f, latent_dec_f, sample_f,
             softmax_loss_function=softmax_loss_function)
       else:
         self.outputs, self.losses = seq2seq.autoencoder_with_buckets(
@@ -213,7 +220,7 @@ class Seq2SeqModel(object):
             self.encoder_inputs, self.decoder_inputs, targets,
             self.target_weights, buckets, encoder_f,
             lambda x, y: decoder_f(x, y, feed_previous),
-            enc_latent_f, latent_dec_f,
+            enc_latent_f, latent_dec_f, sample_f,
             softmax_loss_function=softmax_loss_function)
       else:
         self.outputs, self.losses = seq2seq.autoencoder_with_buckets(
