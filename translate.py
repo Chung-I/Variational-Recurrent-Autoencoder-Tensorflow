@@ -145,6 +145,7 @@ def create_model(session, forward_only):
       FLAGS.learning_rate,
       FLAGS.learning_rate_decay_factor,
       FLAGS.feed_previous,
+      FLAGS.variational,
       optimizer=optimizer,
       forward_only=forward_only,
       dtype=dtype)

@@ -57,6 +57,7 @@ class Seq2SeqModel(object):
                use_lstm=False,
                num_samples=512,
                optimizer=None,
+               variational=False,
                forward_only=False,
                feed_previous=False,
                dtype=tf.float32):
@@ -186,11 +187,17 @@ class Seq2SeqModel(object):
 
     # Training outputs and losses.
     if forward_only:
-      self.outputs, self.losses = seq2seq.autoencoder_with_buckets(
-          self.encoder_inputs, self.decoder_inputs, targets,
-          self.target_weights, buckets, encoder_f, lambda x, y: decoder_f(x, y, True),
-          enc_latent_f, latent_dec_f,
-          softmax_loss_function=softmax_loss_function)
+      if variational:
+        self.outputs, self.losses = seq2seq.variational_autoencoder_with_buckets(
+            self.encoder_inputs, self.decoder_inputs, targets,
+            self.target_weights, buckets, encoder_f, lambda x, y: decoder_f(x, y, True),
+            enc_latent_f, latent_dec_f,
+            softmax_loss_function=softmax_loss_function)
+      else:
+        self.outputs, self.losses = seq2seq.autoencoder_with_buckets(
+            self.encoder_inputs, self.decoder_inputs, targets,
+            self.target_weights, buckets, encoder_f, lambda x, y: decoder_f(x, y, True),
+            softmax_loss_function=softmax_loss_function)
       # If we use output projection, we need to project outputs for decoding.
       if output_projection is not None:
         for b in xrange(len(buckets)):
@@ -199,13 +206,19 @@ class Seq2SeqModel(object):
               for output in self.outputs[b]
           ]
     else:
-      self.outputs, self.losses = seq2seq.autoencoder_with_buckets(
-          self.encoder_inputs, self.decoder_inputs, targets,
-          self.target_weights, buckets, encoder_f,
-          lambda x, y: decoder_f(x, y, feed_previous),
-          enc_latent_f, latent_dec_f,
-          softmax_loss_function=softmax_loss_function)
-
+      if variational:
+        self.outputs, self.losses = seq2seq.variational_autoencoder_with_buckets(
+            self.encoder_inputs, self.decoder_inputs, targets,
+            self.target_weights, buckets, encoder_f,
+            lambda x, y: decoder_f(x, y, feed_previous),
+            enc_latent_f, latent_dec_f,
+            softmax_loss_function=softmax_loss_function)
+      else:
+        self.outputs, self.losses = seq2seq.autoencoder_with_buckets(
+            self.encoder_inputs, self.decoder_inputs, targets,
+            self.target_weights, buckets, encoder_f,
+            lambda x, y: decoder_f(x, y, feed_previous),
+            softmax_loss_function=softmax_loss_function)
     # Gradients and SGD update operation for training the model.
     params = tf.trainable_variables()
     if not forward_only:
