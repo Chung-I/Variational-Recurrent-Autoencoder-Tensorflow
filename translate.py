@@ -51,6 +51,7 @@ from tensorflow.contrib.tensorboard.plugins import projector
 
 
 tf.app.flags.DEFINE_float("learning_rate", 0.001, "Learning rate.")
+tf.app.flags.DEFINE_float("Lambda", 2, "kl divergence threshold.")
 tf.app.flags.DEFINE_float("learning_rate_decay_factor", 0.99,
                           "Learning rate decays by this much.")
 tf.app.flags.DEFINE_float("max_gradient_norm", 5.0,
@@ -58,6 +59,7 @@ tf.app.flags.DEFINE_float("max_gradient_norm", 5.0,
 tf.app.flags.DEFINE_integer("batch_size", 64,
                             "Batch size to use during training.")
 tf.app.flags.DEFINE_integer("size", 128, "Size of each model layer.")
+tf.app.flags.DEFINE_integer("latent_splits", 8, "kl divergence latent splits.")
 tf.app.flags.DEFINE_integer("num_layers", 1, "Number of layers in the model.")
 tf.app.flags.DEFINE_integer("latent_dim", 64, "latent dimension.")
 tf.app.flags.DEFINE_integer("en_vocab_size", 10000, "English vocabulary size.")
@@ -145,6 +147,8 @@ def create_model(session, forward_only):
       FLAGS.batch_size,
       FLAGS.learning_rate,
       FLAGS.learning_rate_decay_factor,
+      FLAGS.latent_splits,
+      FLAGS.Lambda,
       optimizer=optimizer,
       variational=FLAGS.variational,
       forward_only=forward_only,
@@ -182,6 +186,8 @@ def train():
       stats['hyperparameters'] = FLAGS.__dict__['__flags']
       stats['model_name'] = stats['hyperparameters']['ckpt']
       stats['train_perplexity'] = {}
+      stats['train_KL_divergence'] = {}
+      stats['eval_KL_divergence'] = {}
       stats['eval_perplexity'] = {}
       with open(stat_file_name, "w") as statfile:
         statfile.write(json.dumps(stats))
@@ -244,7 +250,7 @@ def train():
                "%.2f" % (model.global_step.eval(), model.learning_rate.eval(),
                          step_time, perplexity))
 
-        stats['KL_divergence'][str(current_step)] = KL_loss
+        stats['train_KL_divergence'][str(current_step)] = KL_loss
         print ("global step %d learning rate %.4f step-time %.2f KL divergence "
                "%.2f" % (model.global_step.eval(), model.learning_rate.eval(),
                          step_time, KL_loss))
@@ -267,9 +273,10 @@ def train():
         # Save checkpoint and zero timer and loss.
         checkpoint_path = os.path.join(FLAGS.model_dir, FLAGS.ckpt + ".ckpt")
         model.saver.save(sess, checkpoint_path, global_step=model.global_step)
-        step_time, loss = 0.0, 0.0
+        step_time, loss, KL_loss = 0.0, 0.0, 0.0
         # Run evals on development set and print their perplexity.
         eval_losses = []
+        eval_KL_losses = []
         eval_bucket_num = 0
         for bucket_id in xrange(len(_buckets)):
           if len(dev_set[bucket_id]) == 0:
@@ -278,21 +285,25 @@ def train():
           eval_bucket_num += 1
           encoder_inputs, decoder_inputs, target_weights = model.get_batch(
               dev_set, bucket_id)
-          _, eval_loss, _ = model.step(sess, encoder_inputs, decoder_inputs,
+          _, eval_loss, eval_KL_loss, _ = model.step(sess, encoder_inputs, decoder_inputs,
                                        target_weights, bucket_id, True)
           eval_losses.append(float(eval_loss))
-
+          eval_KL_losses.append(float(eval_KL_loss))
           eval_ppx = math.exp(float(eval_loss)) if eval_loss < 300 else float(
               "inf")
           print("  eval: bucket %d perplexity %.2f" % (bucket_id, eval_ppx))
           eval_perp_summary = tf.Summary(value=[tf.Summary.Value(tag="eval perplexity for bucket {0}".format(bucket_id), simple_value=eval_ppx)])
           dev_writer.add_summary(eval_perp_summary, current_step)
         mean_eval_loss = sum(eval_losses) / float(eval_bucket_num)
+        mean_eval_KL_loss = sum(eval_KL_losses) / float(eval_bucket_num)
         mean_eval_ppx = math.exp(float(mean_eval_loss))
         print("  eval: mean perplexity {0}".format(mean_eval_ppx))
         stats['eval_perplexity'][str(current_step)] = mean_eval_ppx
+        stats['eval_KL_divergence'][str(current_step)] = mean_eval_KL_loss
         eval_loss_summary = tf.Summary(value=[tf.Summary.Value(tag="mean eval loss", simple_value=float(mean_eval_ppx))])
         dev_writer.add_summary(eval_loss_summary, current_step)
+        eval_KL_loss_summary = tf.Summary(value=[tf.Summary.Value(tag="mean eval loss", simple_value=float(mean_eval_KL_loss))])
+        dev_writer.add_summary(eval_KL_loss_summary, current_step)
         with open(stat_file_name, "w") as statfile:
           statfile.write(json.dumps(stats))
         sys.stdout.flush()

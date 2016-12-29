@@ -1305,8 +1305,13 @@ def sequence_loss(logits, targets, weights,
       return cost
 
 
-def KL_divergence(mean, logvar):
-  return -tf.reduce_sum(0.5 * (2 * logvar - tf.square(mean) - tf.exp(2 * logvar) + 1.0), 1)
+def KL_divergence(means, logvars, M, Lambda):
+  print("latent splits: {0}, Lambda: {1}".format(M, Lambda))
+  splitted_means = tf.split(1, M, means)
+  splitted_logvars = tf.split(1, M, logvars)
+  def kl_f(mean,logvar):
+    return -tf.reduce_sum(0.5 * (2 * logvar - tf.square(mean) - tf.exp(2 * logvar) + 1.0), 1)
+  return math_ops.add_n([tf.maximum(kl_f(mean, logvar), Lambda)  for (mean, logvar) in zip(splitted_means, splitted_logvars)])
 
 def model_with_buckets(encoder_inputs, decoder_inputs, targets, weights,
                        buckets, seq2seq, softmax_loss_function=None,
@@ -1500,7 +1505,8 @@ def latent_to_decoder(latent_vector,
 
 
 def variational_autoencoder_with_buckets(encoder_inputs, decoder_inputs, targets, weights,
-                       buckets, encoder, decoder, enc_latent, latent_dec, sample, softmax_loss_function=None,
+                       buckets, encoder, decoder, enc_latent, latent_dec, sample, M, Lambda,
+                       softmax_loss_function=None,
                        per_example_loss=False, name=None):
   """Create a sequence-to-sequence model with support for bucketing.
 
@@ -1561,7 +1567,9 @@ def variational_autoencoder_with_buckets(encoder_inputs, decoder_inputs, targets
         decoder_initial_state = latent_dec(latent_vector)
         bucket_outputs, _ = decoder(decoder_initial_state, decoder_inputs[:bucket[1]])
         outputs.append(bucket_outputs)
-        KL_divergences.append(KL_divergence(mean, logvar) / math.add_n(weights))
+        total_size = math_ops.add_n(weights[:bucket[1]])
+        total_size += 1e-12 
+        KL_divergences.append(tf.reduce_mean(KL_divergence(mean, logvar, M, Lambda) / total_size))
         if per_example_loss:
           losses.append(sequence_loss_by_example(
               outputs[-1], targets[:bucket[1]], weights[:bucket[1]],

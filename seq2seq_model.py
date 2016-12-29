@@ -54,6 +54,8 @@ class Seq2SeqModel(object):
                batch_size,
                learning_rate,
                learning_rate_decay_factor,
+               latent_splits=8,
+               Lambda=2,
                use_lstm=False,
                num_samples=512,
                optimizer=None,
@@ -220,7 +222,7 @@ class Seq2SeqModel(object):
             self.encoder_inputs, self.decoder_inputs, targets,
             self.target_weights, buckets, encoder_f,
             lambda x, y: decoder_f(x, y, feed_previous),
-            enc_latent_f, latent_dec_f, sample_f,
+            enc_latent_f, latent_dec_f, sample_f, latent_splits, Lambda,
             softmax_loss_function=softmax_loss_function)
       else:
         self.outputs, self.losses = seq2seq.autoencoder_with_buckets(
