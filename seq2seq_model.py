@@ -63,6 +63,7 @@ class Seq2SeqModel(object):
                num_samples=512,
                optimizer=None,
                variational=False,
+               probabilistic=False,
                forward_only=False,
                feed_previous=True,
                dtype=tf.float32):
@@ -218,7 +219,7 @@ class Seq2SeqModel(object):
       kl_f = lower_bounded_kl_f
     # Training outputs and losses.
     if forward_only:
-      if variational:
+      if probabilistic:
         self.means, self.logvars = seq2seq.variational_encoder_with_buckets(
             self.encoder_inputs, buckets, encoder_f, enc_latent_f,
             softmax_loss_function=softmax_loss_function)
@@ -227,6 +228,13 @@ class Seq2SeqModel(object):
             self.target_weights, buckets,
             lambda x, y: decoder_f(x, y, True),
             latent_dec_f, sample_f, kl_f,
+            softmax_loss_function=softmax_loss_function)
+      else if variational:
+        self.outputs, self.losses = seq2seq.variational_autoencoder_with_buckets(
+            self.encoder_inputs, self.decoder_inputs, targets,
+            self.target_weights, buckets, encoder_f, lambda x, y: decoder_f(x, y, True),
+            enc_latent_f, latent_dec_f, sample_f, kl_f,
+            probabilistic=False,
             softmax_loss_function=softmax_loss_function)
       else:
         self.outputs, self.losses = seq2seq.autoencoder_with_buckets(
@@ -241,7 +249,7 @@ class Seq2SeqModel(object):
               for output in self.outputs[b]
           ]
     else:
-      if variational:
+      if probabilistic:
         self.means, self.logvars = seq2seq.variational_encoder_with_buckets(
             self.encoder_inputs, buckets, encoder_f, enc_latent_f,
             softmax_loss_function=softmax_loss_function)
@@ -250,6 +258,14 @@ class Seq2SeqModel(object):
             self.target_weights, buckets,
             lambda x, y: decoder_f(x, y, feed_previous),
             latent_dec_f, sample_f, kl_f,
+            softmax_loss_function=softmax_loss_function)
+      else if variational:
+        self.outputs, self.losses = seq2seq.variational_autoencoder_with_buckets(
+            self.encoder_inputs, self.decoder_inputs, targets,
+            self.target_weights, buckets, encoder_f,
+            lambda x, y: decoder_f(x, y, feed_previous),
+            enc_latent_f, latent_dec_f, sample_f, kl_f,
+            probabilistic=False,
             softmax_loss_function=softmax_loss_function)
       else:
         self.outputs, self.losses = seq2seq.autoencoder_with_buckets(
@@ -265,11 +281,15 @@ class Seq2SeqModel(object):
       if not optimizer:
         optimizer = tf.train.GradientDescentOptimizer(self.learning_rate)
       for b in xrange(len(buckets)):
-        if annealing:
-          annealed_KL_divergence = self.kl_rate * self.KL_divergences[b]
-          gradients = tf.gradients(self.losses[b] + annealed_KL_divergence, params)
+        if probabilistic:
+          if annealing:
+            annealed_KL_divergence = self.kl_rate * self.KL_divergences[b]
+            total_loss = self.losses[b] + annealed_KL_divergence
+          else:
+            total_loss = self.losses[b] + self.KL_divergences[b]
         else:
-          gradients = tf.gradients(self.losses[b] + self.KL_divergences[b], params)
+            total_loss = self.losses[b]
+        gradients = tf.gradients(total_loss, params)
         clipped_gradients, norm = tf.clip_by_global_norm(gradients,
                                                          max_gradient_norm)
         self.gradient_norms.append(norm)

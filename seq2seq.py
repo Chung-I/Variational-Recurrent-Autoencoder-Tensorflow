@@ -1512,6 +1512,7 @@ def latent_to_decoder(latent_vector,
 
 def variational_autoencoder_with_buckets(encoder_inputs, decoder_inputs, targets, weights,
                        buckets, encoder, decoder, enc_latent, latent_dec, sample, kl_f,
+                       probabilistic=False,
                        softmax_loss_function=None,
                        per_example_loss=False, name=None):
   """Create a sequence-to-sequence model with support for bucketing.
@@ -1569,7 +1570,10 @@ def variational_autoencoder_with_buckets(encoder_inputs, decoder_inputs, targets
                                          reuse=True if j > 0 else None):
         encoder_last_state = encoder(encoder_inputs[:bucket[0]])
         mean, logvar = enc_latent(encoder_last_state)
-        latent_vector = sample(mean, logvar)
+        if probabilistic:
+          latent_vector = sample(mean, logvar)
+        else:
+          latent_vector = mean
         decoder_initial_state = latent_dec(latent_vector)
         bucket_outputs, _ = decoder(decoder_initial_state, decoder_inputs[:bucket[1]])
         outputs.append(bucket_outputs)

@@ -87,6 +87,8 @@ tf.app.flags.DEFINE_boolean("new", True,
                             "Train a new model.")
 tf.app.flags.DEFINE_boolean("variational", False,
                             "use variational layer or not.")
+tf.app.flags.DEFINE_boolean("probabilistic", False,
+                            "use probabilistic layer or not.")
 tf.app.flags.DEFINE_boolean("annealing", False,
                             "use kl cost annealing or not.")
 tf.app.flags.DEFINE_boolean("feed_previous", True,
@@ -160,6 +162,7 @@ def create_model(session, forward_only):
       FLAGS.kl_rate_rise_factor,
       optimizer=optimizer,
       variational=FLAGS.variational,
+      probabilistic=FLAGS.probabilistic,
       forward_only=forward_only,
       feed_previous=FLAGS.feed_previous,
       dtype=dtype)
