@@ -9,4 +9,4 @@ serialize
 serialize_tensorboard.py
 stats
 4.py
-test.jpg
+*.jpg
