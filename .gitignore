@@ -8,4 +8,5 @@ nohup.out
 serialize
 serialize_tensorboard.py
 stats
-plot.py
+4.py
+test.jpg
