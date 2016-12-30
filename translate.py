@@ -88,7 +88,7 @@ tf.app.flags.DEFINE_boolean("variational", False,
                             "use variational layer or not.")
 tf.app.flags.DEFINE_boolean("annealing", False,
                             "use kl cost annealing or not.")
-tf.app.flags.DEFINE_boolean("feed_previous", False,
+tf.app.flags.DEFINE_boolean("feed_previous", True,
                             "if True, inputs are feeded with last output.")
 
 FLAGS = tf.app.flags.FLAGS

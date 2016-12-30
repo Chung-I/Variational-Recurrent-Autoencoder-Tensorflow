@@ -64,7 +64,7 @@ class Seq2SeqModel(object):
                optimizer=None,
                variational=False,
                forward_only=False,
-               feed_previous=False,
+               feed_previous=True,
                dtype=tf.float32):
     """Create the model.
 
@@ -219,10 +219,14 @@ class Seq2SeqModel(object):
     # Training outputs and losses.
     if forward_only:
       if variational:
-        self.outputs, self.losses, self.KL_divergences = seq2seq.variational_autoencoder_with_buckets(
-            self.encoder_inputs, self.decoder_inputs, targets,
-            self.target_weights, buckets, encoder_f, lambda x, y: decoder_f(x, y, True),
-            enc_latent_f, latent_dec_f, sample_f, kl_f,
+        self.means, self.logvars = seq2seq.variational_encoder_with_buckets(
+            self.encoder_inputs, buckets, encoder_f, enc_latent_f,
+            softmax_loss_function=softmax_loss_function)
+        self.outputs, self.losses, self.KL_divergences = seq2seq.variational_decoder_with_buckets(
+            self.means, self.logvars, self.encoder_inputs, self.decoder_inputs, targets,
+            self.target_weights, buckets,
+            lambda x, y: decoder_f(x, y, True),
+            latent_dec_f, sample_f, kl_f,
             softmax_loss_function=softmax_loss_function)
       else:
         self.outputs, self.losses = seq2seq.autoencoder_with_buckets(
@@ -238,11 +242,14 @@ class Seq2SeqModel(object):
           ]
     else:
       if variational:
-        self.outputs, self.losses, self.KL_divergences = seq2seq.variational_autoencoder_with_buckets(
-            self.encoder_inputs, self.decoder_inputs, targets,
-            self.target_weights, buckets, encoder_f,
+        self.means, self.logvars = seq2seq.variational_encoder_with_buckets(
+            self.encoder_inputs, buckets, encoder_f, enc_latent_f,
+            softmax_loss_function=softmax_loss_function)
+        self.outputs, self.losses, self.KL_divergences = seq2seq.variational_decoder_with_buckets(
+            self.means, self.logvars, self.encoder_inputs, self.decoder_inputs, targets,
+            self.target_weights, buckets,
             lambda x, y: decoder_f(x, y, feed_previous),
-            enc_latent_f, latent_dec_f, sample_f, kl_f,
+            latent_dec_f, sample_f, kl_f,
             softmax_loss_function=softmax_loss_function)
       else:
         self.outputs, self.losses = seq2seq.autoencoder_with_buckets(
@@ -271,6 +278,9 @@ class Seq2SeqModel(object):
 
     self.saver = tf.train.Saver(tf.global_variables())
 
+
+
+  
   def step(self, session, encoder_inputs, decoder_inputs, target_weights,
            bucket_id, forward_only):
     """Run a step of the model feeding the given inputs.

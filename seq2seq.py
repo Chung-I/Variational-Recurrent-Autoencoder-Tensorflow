@@ -1586,3 +1586,69 @@ def variational_autoencoder_with_buckets(encoder_inputs, decoder_inputs, targets
               softmax_loss_function=softmax_loss_function))
 
   return outputs, losses, KL_divergences
+
+
+def variational_encoder_with_buckets(encoder_inputs, buckets, encoder,
+                       enc_latent, softmax_loss_function=None,
+                       per_example_loss=False, name=None):
+  """Create a sequence-to-sequence model with support for bucketing.
+  """
+  if len(encoder_inputs) < buckets[-1][0]:
+    raise ValueError("Length of encoder_inputs (%d) must be at least that of la"
+                     "st bucket (%d)." % (len(encoder_inputs), buckets[-1][0]))
+
+  all_inputs = encoder_inputs + decoder_inputs + targets + weights
+  means = []
+  logvars = []
+  print("variational_encoder_with_buckets")
+  with ops.name_scope(name, "variational_encoder_with_buckets", all_inputs):
+    for j, bucket in enumerate(buckets):
+      with variable_scope.variable_scope(variable_scope.get_variable_scope(),
+                                         reuse=True if j > 0 else None):
+        encoder_last_state = encoder(encoder_inputs[:bucket[0]])
+        mean, logvar = enc_latent(encoder_last_state)
+        means.append(mean)
+        logvars.append(logvar)
+
+  return means, logvars
+
+def variational_decoder_with_buckets(means, logvars, decoder_inputs,
+                       targets, weights,
+                       buckets, decoder, latent_dec, sample, kl_f,
+                       softmax_loss_function=None,
+                       per_example_loss=False, name=None):
+  """Create a sequence-to-sequence model with support for bucketing.
+  """
+  if len(targets) < buckets[-1][1]:
+    raise ValueError("Length of targets (%d) must be at least that of last"
+                     "bucket (%d)." % (len(targets), buckets[-1][1]))
+  if len(weights) < buckets[-1][1]:
+    raise ValueError("Length of weights (%d) must be at least that of last"
+                     "bucket (%d)." % (len(weights), buckets[-1][1]))
+
+    all_inputs = encoder_inputs + decoder_inputs + targets + weights
+    losses = []
+    outputs = []
+    KL_divergences = []
+    print("variational_decoder_with_buckets")
+    with ops.name_scope(name, "variational_decoder_with_buckets", all_inputs):
+      for j, bucket in enumerate(buckets):
+        with variable_scope.variable_scope(variable_scope.get_variable_scope(),
+                                           reuse=True if j > 0 else None):
+        latent_vector = sample(means[j], logvars[j])
+        decoder_initial_state = latent_dec(latent_vector)
+        bucket_outputs, _ = decoder(decoder_initial_state, decoder_inputs[:bucket[1]])
+        outputs.append(bucket_outputs)
+        total_size = math_ops.add_n(weights[:bucket[1]])
+        total_size += 1e-12 
+        KL_divergences.append(tf.reduce_mean(kl_f(mean, logvar) / total_size))
+        if per_example_loss:
+          losses.append(sequence_loss_by_example(
+              outputs[-1], targets[:bucket[1]], weights[:bucket[1]],
+              softmax_loss_function=softmax_loss_function))
+        else:
+          losses.append(sequence_loss(
+              outputs[-1], targets[:bucket[1]], weights[:bucket[1]],
+              softmax_loss_function=softmax_loss_function))
+
+  return outputs, losses, KL_divergences
