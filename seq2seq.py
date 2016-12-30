@@ -1589,6 +1589,7 @@ def variational_autoencoder_with_buckets(encoder_inputs, decoder_inputs, targets
               outputs[-1], targets[:bucket[1]], weights[:bucket[1]],
               softmax_loss_function=softmax_loss_function))
 
+
   return outputs, losses, KL_divergences
 
 

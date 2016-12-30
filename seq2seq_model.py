@@ -62,7 +62,7 @@ class Seq2SeqModel(object):
                use_lstm=False,
                num_samples=512,
                optimizer=None,
-               variational=False,
+               dnn_in_between=False,
                probabilistic=False,
                forward_only=False,
                feed_previous=True,
@@ -218,61 +218,35 @@ class Seq2SeqModel(object):
     else:
       kl_f = lower_bounded_kl_f
     # Training outputs and losses.
-    if forward_only:
-      if probabilistic:
-        self.means, self.logvars = seq2seq.variational_encoder_with_buckets(
-            self.encoder_inputs, buckets, encoder_f, enc_latent_f,
-            softmax_loss_function=softmax_loss_function)
-        self.outputs, self.losses, self.KL_divergences = seq2seq.variational_decoder_with_buckets(
-            self.means, self.logvars, self.decoder_inputs, targets,
-            self.target_weights, buckets,
-            lambda x, y: decoder_f(x, y, True),
-            latent_dec_f, sample_f, kl_f,
-            softmax_loss_function=softmax_loss_function)
-      else if variational:
-        self.outputs, self.losses = seq2seq.variational_autoencoder_with_buckets(
-            self.encoder_inputs, self.decoder_inputs, targets,
-            self.target_weights, buckets, encoder_f, lambda x, y: decoder_f(x, y, True),
-            enc_latent_f, latent_dec_f, sample_f, kl_f,
-            probabilistic=False,
-            softmax_loss_function=softmax_loss_function)
-      else:
-        self.outputs, self.losses = seq2seq.autoencoder_with_buckets(
-            self.encoder_inputs, self.decoder_inputs, targets,
-            self.target_weights, buckets, encoder_f, lambda x, y: decoder_f(x, y, True),
-            softmax_loss_function=softmax_loss_function)
-      # If we use output projection, we need to project outputs for decoding.
-      if output_projection is not None:
-        for b in xrange(len(buckets)):
-          self.outputs[b] = [
-              tf.matmul(output, output_projection[0]) + output_projection[1]
-              for output in self.outputs[b]
-          ]
+    if probabilistic:
+      self.means, self.logvars = seq2seq.variational_encoder_with_buckets(
+          self.encoder_inputs, buckets, encoder_f, enc_latent_f,
+          softmax_loss_function=softmax_loss_function)
+      self.outputs, self.losses, self.KL_divergences = seq2seq.variational_decoder_with_buckets(
+          self.means, self.logvars, self.decoder_inputs, targets,
+          self.target_weights, buckets,
+          lambda x, y: decoder_f(x, y, True),
+          latent_dec_f, sample_f, kl_f,
+          softmax_loss_function=softmax_loss_function)
+    else if dnn_in_between:
+      self.outputs, self.losses, self.KL_divergences = seq2seq.variational_autoencoder_with_buckets(
+          self.encoder_inputs, self.decoder_inputs, targets,
+          self.target_weights, buckets, encoder_f, lambda x, y: decoder_f(x, y, True),
+          enc_latent_f, latent_dec_f, sample_f, kl_f,
+          probabilistic=False,
+          softmax_loss_function=softmax_loss_function)
     else:
-      if probabilistic:
-        self.means, self.logvars = seq2seq.variational_encoder_with_buckets(
-            self.encoder_inputs, buckets, encoder_f, enc_latent_f,
-            softmax_loss_function=softmax_loss_function)
-        self.outputs, self.losses, self.KL_divergences = seq2seq.variational_decoder_with_buckets(
-            self.means, self.logvars, self.decoder_inputs, targets,
-            self.target_weights, buckets,
-            lambda x, y: decoder_f(x, y, feed_previous),
-            latent_dec_f, sample_f, kl_f,
-            softmax_loss_function=softmax_loss_function)
-      else if variational:
-        self.outputs, self.losses = seq2seq.variational_autoencoder_with_buckets(
-            self.encoder_inputs, self.decoder_inputs, targets,
-            self.target_weights, buckets, encoder_f,
-            lambda x, y: decoder_f(x, y, feed_previous),
-            enc_latent_f, latent_dec_f, sample_f, kl_f,
-            probabilistic=False,
-            softmax_loss_function=softmax_loss_function)
-      else:
-        self.outputs, self.losses = seq2seq.autoencoder_with_buckets(
-            self.encoder_inputs, self.decoder_inputs, targets,
-            self.target_weights, buckets, encoder_f,
-            lambda x, y: decoder_f(x, y, feed_previous),
-            softmax_loss_function=softmax_loss_function)
+      self.outputs, self.losses = seq2seq.autoencoder_with_buckets(
+          self.encoder_inputs, self.decoder_inputs, targets,
+          self.target_weights, buckets, encoder_f, lambda x, y: decoder_f(x, y, True),
+          softmax_loss_function=softmax_loss_function)
+    # If we use output projection, we need to project outputs for decoding.
+    if output_projection is not None:
+      for b in xrange(len(buckets)):
+        self.outputs[b] = [
+            tf.matmul(output, output_projection[0]) + output_projection[1]
+            for output in self.outputs[b]
+          ]
     # Gradients and SGD update operation for training the model.
     params = tf.trainable_variables()
     if not forward_only:
