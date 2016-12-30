@@ -1597,7 +1597,7 @@ def variational_encoder_with_buckets(encoder_inputs, buckets, encoder,
     raise ValueError("Length of encoder_inputs (%d) must be at least that of la"
                      "st bucket (%d)." % (len(encoder_inputs), buckets[-1][0]))
 
-  all_inputs = encoder_inputs + decoder_inputs + targets + weights
+  all_inputs = encoder_inputs
   means = []
   logvars = []
   print("variational_encoder_with_buckets")
@@ -1626,14 +1626,14 @@ def variational_decoder_with_buckets(means, logvars, decoder_inputs,
     raise ValueError("Length of weights (%d) must be at least that of last"
                      "bucket (%d)." % (len(weights), buckets[-1][1]))
 
-    all_inputs = encoder_inputs + decoder_inputs + targets + weights
-    losses = []
-    outputs = []
-    KL_divergences = []
-    print("variational_decoder_with_buckets")
-    with ops.name_scope(name, "variational_decoder_with_buckets", all_inputs):
-      for j, bucket in enumerate(buckets):
-        with variable_scope.variable_scope(variable_scope.get_variable_scope(),
+  all_inputs = decoder_inputs + targets + weights
+  losses = []
+  outputs = []
+  KL_divergences = []
+  print("variational_decoder_with_buckets")
+  with ops.name_scope(name, "variational_decoder_with_buckets", all_inputs):
+    for j, bucket in enumerate(buckets):
+      with variable_scope.variable_scope(variable_scope.get_variable_scope(),
                                            reuse=True if j > 0 else None):
         latent_vector = sample(means[j], logvars[j])
         decoder_initial_state = latent_dec(latent_vector)
@@ -1641,7 +1641,7 @@ def variational_decoder_with_buckets(means, logvars, decoder_inputs,
         outputs.append(bucket_outputs)
         total_size = math_ops.add_n(weights[:bucket[1]])
         total_size += 1e-12 
-        KL_divergences.append(tf.reduce_mean(kl_f(mean, logvar) / total_size))
+        KL_divergences.append(tf.reduce_mean(kl_f(means[j], logvars[j]) / total_size))
         if per_example_loss:
           losses.append(sequence_loss_by_example(
               outputs[-1], targets[:bucket[1]], weights[:bucket[1]],
