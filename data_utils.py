@@ -265,8 +265,8 @@ def prepare_wmt_data(data_dir, en_vocabulary_size, fr_vocabulary_size, tokenizer
   # Get wmt data to the specified directory.
   #train_path = get_wmt_enfr_train_set(data_dir)
   #dev_path = get_wmt_enfr_dev_set(data_dir)
-  train_path = "corpus/train.txt"
-  dev_path = "corpus/dev.txt"
+  train_path = os.path.join(data_dir, "train.txt")
+  dev_path = os.path.join(data_dir, "dev.txt")
 
   # Create vocabularies of the appropriate sizes.
   fr_vocab_path = os.path.join(data_dir, "vocab%d.fr" % fr_vocabulary_size)

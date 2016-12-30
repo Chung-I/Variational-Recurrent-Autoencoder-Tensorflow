@@ -67,7 +67,7 @@ tf.app.flags.DEFINE_integer("num_layers", 1, "Number of layers in the model.")
 tf.app.flags.DEFINE_integer("latent_dim", 64, "latent dimension.")
 tf.app.flags.DEFINE_integer("en_vocab_size", 10000, "English vocabulary size.")
 tf.app.flags.DEFINE_integer("fr_vocab_size", 10000, "French vocabulary size.")
-tf.app.flags.DEFINE_string("data_dir", "corpus", "Data directory")
+tf.app.flags.DEFINE_string("data_dir", "corpus/poem_based", "Data directory")
 tf.app.flags.DEFINE_string("train_dir", "models", "Training directory.")
 tf.app.flags.DEFINE_string("ckpt", "translate", "checkpoint file name.")
 tf.app.flags.DEFINE_integer("max_train_data_size", 0,
