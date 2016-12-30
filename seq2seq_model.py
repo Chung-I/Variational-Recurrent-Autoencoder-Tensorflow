@@ -213,9 +213,9 @@ class Seq2SeqModel(object):
 
 
     if annealing:
-      kl_f = lower_bounded_kl_f
-    else:
       kl_f = seq2seq.KL_divergence
+    else:
+      kl_f = lower_bounded_kl_f
     # Training outputs and losses.
     if forward_only:
       if variational:
@@ -330,7 +330,7 @@ class Seq2SeqModel(object):
     if not forward_only:
       return outputs[1], outputs[2], outputs[3], None  # Gradient norm, loss, KL divergence, no outputs.
     else:
-        return None, outputs[0], outputs[1], outputs[2:]  # summaries, no gradient norm, loss, outputs.
+        return None, outputs[0], outputs[1], outputs[2:]  # no gradient norm, loss, KL divergence, outputs.
 
   def get_batch(self, data, bucket_id):
     """Get a random batch of data from the specified bucket, prepare for step.

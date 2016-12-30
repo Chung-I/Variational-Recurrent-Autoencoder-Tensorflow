@@ -366,7 +366,7 @@ def decode():
         encoder_inputs, decoder_inputs, target_weights = model.get_batch(
             {bucket_id: [(token_ids, [])]}, bucket_id)
         # Get output logits for the sentence.
-        _, _, output_logits = model.step(sess, encoder_inputs, decoder_inputs,
+        _, _, _, output_logits = model.step(sess, encoder_inputs, decoder_inputs,
                                          target_weights, bucket_id, True)
         # This is a greedy decoder - outputs are just argmaxes of output_logits.
         outputs = [int(np.argmax(logit, axis=1)) for logit in output_logits]
@@ -374,7 +374,7 @@ def decode():
         if data_utils.EOS_ID in outputs:
           outputs = outputs[:outputs.index(data_utils.EOS_ID)]
         # Print out French sentence corresponding to outputs.
-          fo.write(" ".join([rev_fr_vocab[output] for output in outputs]))
+          fo.write(" ".join([rev_fr_vocab[output] for output in outputs]) + "\n")
 
 
 def self_test():
