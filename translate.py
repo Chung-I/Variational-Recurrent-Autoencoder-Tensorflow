@@ -54,11 +54,14 @@ tf.app.flags.DEFINE_float("learning_rate", 0.001, "Learning rate.")
 tf.app.flags.DEFINE_float("Lambda", 2, "kl divergence threshold.")
 tf.app.flags.DEFINE_float("learning_rate_decay_factor", 0.99,
                           "Learning rate decays by this much.")
+tf.app.flags.DEFINE_float("kl_rate_rise_factor", 0.01,
+                          "increase of kl rate per 200 step.")
 tf.app.flags.DEFINE_float("max_gradient_norm", 5.0,
                           "Clip gradients to this norm.")
 tf.app.flags.DEFINE_integer("batch_size", 64,
                             "Batch size to use during training.")
 tf.app.flags.DEFINE_integer("size", 128, "Size of each model layer.")
+tf.app.flags.DEFINE_integer("rise time", 5000, "when we start to increase our KL rate.")
 tf.app.flags.DEFINE_integer("latent_splits", 8, "kl divergence latent splits.")
 tf.app.flags.DEFINE_integer("num_layers", 1, "Number of layers in the model.")
 tf.app.flags.DEFINE_integer("latent_dim", 64, "latent dimension.")
@@ -83,6 +86,8 @@ tf.app.flags.DEFINE_boolean("new", True,
                             "Train a new model.")
 tf.app.flags.DEFINE_boolean("variational", False,
                             "use variational layer or not.")
+tf.app.flags.DEFINE_boolean("annealing", False,
+                            "use kl cost annealing or not.")
 tf.app.flags.DEFINE_boolean("feed_previous", False,
                             "if True, inputs are feeded with last output.")
 
@@ -245,16 +250,15 @@ def train():
       if current_step % FLAGS.steps_per_checkpoint == 0:
         # Print statistics for the previous epoch.
         perplexity = math.exp(float(loss)) if loss < 300 else float("inf")
-        stats['train_perplexity'][str(current_step)] = perplexity
         print ("global step %d learning rate %.4f step-time %.2f perplexity "
                "%.2f" % (model.global_step.eval(), model.learning_rate.eval(),
                          step_time, perplexity))
 
-        stats['train_KL_divergence'][str(current_step)] = KL_loss
         print ("global step %d learning rate %.4f step-time %.2f KL divergence "
                "%.2f" % (model.global_step.eval(), model.learning_rate.eval(),
                          step_time, KL_loss))
 
+        # Add perplexity, KL divergence to summary and stats.
         perp_summary = tf.Summary(value=[tf.Summary.Value(tag="train perplexity", simple_value=perplexity)])
         train_writer.add_summary(perp_summary, current_step)
         KL_loss_summary = tf.Summary(value=[tf.Summary.Value(tag="KL divergence", simple_value=KL_loss)])
@@ -265,15 +269,23 @@ def train():
         for i, summary in enumerate(step_KL_loss_summaries):
           train_writer.add_summary(summary, current_step - 200 + i)
         step_KL_loss_summaries = []
+
+        stats['train_perplexity'][str(current_step)] = perplexity
+        stats['train_KL_divergence'][str(current_step)] = KL_loss
+
         # Decrease learning rate if no improvement was seen over last 3 times.
         if not FLAGS.adam:
           if len(previous_losses) > 2 and loss > max(previous_losses[-3:]):
             sess.run(model.learning_rate_decay_op)
         previous_losses.append(loss)
+
+        if FLAGS.annealing:
+
         # Save checkpoint and zero timer and loss.
         checkpoint_path = os.path.join(FLAGS.model_dir, FLAGS.ckpt + ".ckpt")
         model.saver.save(sess, checkpoint_path, global_step=model.global_step)
         step_time, loss, KL_loss = 0.0, 0.0, 0.0
+
         # Run evals on development set and print their perplexity.
         eval_losses = []
         eval_KL_losses = []
@@ -292,12 +304,15 @@ def train():
           eval_ppx = math.exp(float(eval_loss)) if eval_loss < 300 else float(
               "inf")
           print("  eval: bucket %d perplexity %.2f" % (bucket_id, eval_ppx))
+
           eval_perp_summary = tf.Summary(value=[tf.Summary.Value(tag="eval perplexity for bucket {0}".format(bucket_id), simple_value=eval_ppx)])
           dev_writer.add_summary(eval_perp_summary, current_step)
+
         mean_eval_loss = sum(eval_losses) / float(eval_bucket_num)
         mean_eval_KL_loss = sum(eval_KL_losses) / float(eval_bucket_num)
         mean_eval_ppx = math.exp(float(mean_eval_loss))
         print("  eval: mean perplexity {0}".format(mean_eval_ppx))
+
         stats['eval_perplexity'][str(current_step)] = mean_eval_ppx
         stats['eval_KL_divergence'][str(current_step)] = mean_eval_KL_loss
         eval_loss_summary = tf.Summary(value=[tf.Summary.Value(tag="mean eval loss", simple_value=float(mean_eval_ppx))])
