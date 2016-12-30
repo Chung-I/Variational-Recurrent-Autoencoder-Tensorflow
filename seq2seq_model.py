@@ -56,6 +56,9 @@ class Seq2SeqModel(object):
                learning_rate_decay_factor,
                latent_splits=8,
                Lambda=2,
+               annealing=False,
+               kl_rate_rise_time=None,
+               kl_rate_rise_factor=None,
                use_lstm=False,
                num_samples=512,
                optimizer=None,
@@ -94,6 +97,13 @@ class Seq2SeqModel(object):
         float(learning_rate), trainable=False, dtype=dtype)
     self.learning_rate_decay_op = self.learning_rate.assign(
         self.learning_rate * learning_rate_decay_factor)
+
+    if annealing:
+      self.kl_rate = tf.Variable(
+          0, trainable=False, dtype=dtype)
+      self.kl_rate_rise_op = self.kl_rate.assign(
+          self.kl_rate + kl_rate_rise_factor)
+
     self.global_step = tf.Variable(0, trainable=False)
 
     # If we use sampled softmax, we need an output projection.
@@ -152,6 +162,10 @@ class Seq2SeqModel(object):
            num_layers=num_layers,
            dtype=dtype)
 
+    def lower_bounded_kl_f(mean, logvar):
+      return seq2seq.lower_bounded_KL_divergence(
+        mean, logvar, latent_splits, Lambda)
+
     def enc_latent_f(encoder_state):
       return seq2seq.encoder_to_latent(encoder_state,
                      embedding_size=size,
@@ -179,6 +193,7 @@ class Seq2SeqModel(object):
           feed_previous=do_decode,
           dtype=dtype)
 
+
     # Feeds for inputs.
     self.encoder_inputs = []
     self.decoder_inputs = []
@@ -196,13 +211,18 @@ class Seq2SeqModel(object):
     targets = [self.decoder_inputs[i + 1]
                for i in xrange(len(self.decoder_inputs) - 1)]
 
+
+    if annealing:
+      kl_f = lower_bounded_kl_f
+    else:
+      kl_f = seq2seq.KL_divergence
     # Training outputs and losses.
     if forward_only:
       if variational:
         self.outputs, self.losses, self.KL_divergences = seq2seq.variational_autoencoder_with_buckets(
             self.encoder_inputs, self.decoder_inputs, targets,
             self.target_weights, buckets, encoder_f, lambda x, y: decoder_f(x, y, True),
-            enc_latent_f, latent_dec_f, sample_f,
+            enc_latent_f, latent_dec_f, sample_f, kl_f,
             softmax_loss_function=softmax_loss_function)
       else:
         self.outputs, self.losses = seq2seq.autoencoder_with_buckets(
@@ -222,7 +242,7 @@ class Seq2SeqModel(object):
             self.encoder_inputs, self.decoder_inputs, targets,
             self.target_weights, buckets, encoder_f,
             lambda x, y: decoder_f(x, y, feed_previous),
-            enc_latent_f, latent_dec_f, sample_f, latent_splits, Lambda,
+            enc_latent_f, latent_dec_f, sample_f, kl_f,
             softmax_loss_function=softmax_loss_function)
       else:
         self.outputs, self.losses = seq2seq.autoencoder_with_buckets(
@@ -238,7 +258,11 @@ class Seq2SeqModel(object):
       if not optimizer:
         optimizer = tf.train.GradientDescentOptimizer(self.learning_rate)
       for b in xrange(len(buckets)):
-        gradients = tf.gradients(self.losses[b] + self.KL_divergences[b], params)
+        if annealing:
+          annealed_KL_divergence = self.kl_rate * self.KL_divergences[b]
+          gradients = tf.gradients(self.losses[b] + annealed_KL_divergence, params)
+        else:
+          gradients = tf.gradients(self.losses[b] + self.KL_divergences[b], params)
         clipped_gradients, norm = tf.clip_by_global_norm(gradients,
                                                          max_gradient_norm)
         self.gradient_norms.append(norm)

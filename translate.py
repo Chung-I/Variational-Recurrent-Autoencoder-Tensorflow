@@ -61,7 +61,7 @@ tf.app.flags.DEFINE_float("max_gradient_norm", 5.0,
 tf.app.flags.DEFINE_integer("batch_size", 64,
                             "Batch size to use during training.")
 tf.app.flags.DEFINE_integer("size", 128, "Size of each model layer.")
-tf.app.flags.DEFINE_integer("rise time", 5000, "when we start to increase our KL rate.")
+tf.app.flags.DEFINE_integer("kl_rate_rise_time", 5000, "when we start to increase our KL rate.")
 tf.app.flags.DEFINE_integer("latent_splits", 8, "kl divergence latent splits.")
 tf.app.flags.DEFINE_integer("num_layers", 1, "Number of layers in the model.")
 tf.app.flags.DEFINE_integer("latent_dim", 64, "latent dimension.")
@@ -154,6 +154,9 @@ def create_model(session, forward_only):
       FLAGS.learning_rate_decay_factor,
       FLAGS.latent_splits,
       FLAGS.Lambda,
+      FLAGS.annealing,
+      FLAGS.kl_rate_rise_time,
+      FLAGS.kl_rate_rise_factor,
       optimizer=optimizer,
       variational=FLAGS.variational,
       forward_only=forward_only,
@@ -280,6 +283,9 @@ def train():
         previous_losses.append(loss)
 
         if FLAGS.annealing:
+          if current_step >= FLAGS.kl_rate_rise_time and model.kl_rate.eval() < 1:
+            sess.run(model.kl_rate_rise_op)
+
 
         # Save checkpoint and zero timer and loss.
         checkpoint_path = os.path.join(FLAGS.model_dir, FLAGS.ckpt + ".ckpt")

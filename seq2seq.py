@@ -1305,13 +1305,19 @@ def sequence_loss(logits, targets, weights,
       return cost
 
 
-def KL_divergence(means, logvars, M, Lambda):
+def lower_bounded_KL_divergence(means, logvars, M, Lambda):
   print("latent splits: {0}, Lambda: {1}".format(M, Lambda))
   splitted_means = tf.split(1, M, means)
   splitted_logvars = tf.split(1, M, logvars)
   def kl_f(mean,logvar):
     return -tf.reduce_sum(0.5 * (2 * logvar - tf.square(mean) - tf.exp(2 * logvar) + 1.0), 1)
+
   return math_ops.add_n([tf.maximum(kl_f(mean, logvar), Lambda)  for (mean, logvar) in zip(splitted_means, splitted_logvars)])
+
+def KL_divergence(means, logvars):
+  return -tf.reduce_sum(0.5 * (2 * logvars - tf.square(means) -
+    tf.exp(2 * logvars) + 1.0), 1)
+
 
 def model_with_buckets(encoder_inputs, decoder_inputs, targets, weights,
                        buckets, seq2seq, softmax_loss_function=None,
@@ -1569,7 +1575,7 @@ def variational_autoencoder_with_buckets(encoder_inputs, decoder_inputs, targets
         outputs.append(bucket_outputs)
         total_size = math_ops.add_n(weights[:bucket[1]])
         total_size += 1e-12 
-        KL_divergences.append(tf.reduce_mean(KL_divergence(mean, logvar, M, Lambda) / total_size))
+        KL_divergences.append(tf.reduce_mean(KL_f(mean, logvar) / total_size))
         if per_example_loss:
           losses.append(sequence_loss_by_example(
               outputs[-1], targets[:bucket[1]], weights[:bucket[1]],
