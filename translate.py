@@ -70,6 +70,7 @@ tf.app.flags.DEFINE_integer("fr_vocab_size", 10000, "French vocabulary size.")
 tf.app.flags.DEFINE_string("data_dir", "corpus/poem_based", "Data directory")
 tf.app.flags.DEFINE_string("train_dir", "models", "Training directory.")
 tf.app.flags.DEFINE_string("ckpt", "translate", "checkpoint file name.")
+tf.app.flags.DEFINE_string("input_file", "input.txt", "input file name.")
 tf.app.flags.DEFINE_integer("max_train_data_size", 0,
                             "Limit on the size of training data (0: no limit).")
 tf.app.flags.DEFINE_integer("steps_per_checkpoint", 200,
@@ -347,7 +348,7 @@ def decode():
     # Decode from standard input.
     sys.stdout.write("> ")
     sys.stdout.flush()
-    with gfile.GFile("input.txt", "r") as fs:
+    with gfile.GFile(FLAGS.input_file, "r") as fs:
       sentences = fs.readlines()
     with gfile.GFile(FLAGS.ckpt + ".output.txt", "w") as fo:
       for i, sentence in  enumerate(sentences):
