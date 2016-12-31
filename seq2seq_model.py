@@ -336,6 +336,43 @@ class Seq2SeqModel(object):
     else:
         return None, outputs[0], outputs[1], outputs[2:]  # no gradient norm, loss, KL divergence, outputs.
 
+
+  def encode_to_latent(self, session, encoder_inputs, bucket_id):
+
+    # Check if the sizes match.
+    encoder_size, _ = self.buckets[bucket_id]
+    if len(encoder_inputs) != encoder_size:
+      raise ValueError("Encoder length must be equal to the one in bucket,"
+                       " %d != %d." % (len(encoder_inputs), encoder_size))
+
+    input_feed = {}
+    for l in xrange(encoder_size):
+      input_feed[self.encoder_inputs[l].name] = encoder_inputs[l]
+
+      for l in xrange(decoder_size):  # Output logits.
+        output_feed.append(self.outputs[bucket_id][l])
+
+    output_feed = self.means
+    means = session.run(output_feed, input_feed)
+
+    return means
+
+
+  def decode_from_latent(self, session, means, bucket_id):
+
+    _, decoder_size = self.buckets[bucket_id]
+
+    # Input feed: means.
+    input_feed = {}
+    input_feed[self.means] = means
+
+    for l in xrange(decoder_size):  # Output logits.
+      output_feed.append(self.outputs[bucket_id][l])
+
+    outputs = session.run(output_feed, input_feed)
+
+    return outputs
+
   def get_batch(self, data, bucket_id):
     """Get a random batch of data from the specified bucket, prepare for step.
 
