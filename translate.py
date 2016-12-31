@@ -91,6 +91,8 @@ tf.app.flags.DEFINE_boolean("probabilistic", False,
                             "use probabilistic layer or not.")
 tf.app.flags.DEFINE_boolean("annealing", False,
                             "use kl cost annealing or not.")
+tf.app.flags.DEFINE_boolean("elu", False,
+                            "use elu or not. If False, use relu.")
 tf.app.flags.DEFINE_boolean("feed_previous", True,
                             "if True, inputs are feeded with last output.")
 
@@ -99,7 +101,7 @@ FLAGS = tf.app.flags.FLAGS
 
 # We use a number of buckets and pad to the closest one for efficiency.
 # See seq2seq_model.Seq2SeqModel for details of how they work.
-_buckets = [(5, 10), (10, 15), (20, 25), (40, 50), (60, 60), (70, 70)]
+_buckets = [(70,70)]
 
 
 def read_data(source_path, target_path, max_size=None):
@@ -144,6 +146,7 @@ def create_model(session, forward_only):
   """Create translation model and initialize or load parameters in session."""
   dtype = tf.float16 if FLAGS.use_fp16 else tf.float32
   optimizer = tf.train.AdamOptimizer(FLAGS.learning_rate) if FLAGS.adam else None
+  activation = tf.nn.elu if FLAGS.elu else tf.nn.relu
   model = seq2seq_model.Seq2SeqModel(
       FLAGS.en_vocab_size,
       FLAGS.fr_vocab_size,
@@ -161,6 +164,7 @@ def create_model(session, forward_only):
       FLAGS.kl_rate_rise_time,
       FLAGS.kl_rate_rise_factor,
       optimizer=optimizer,
+      activation=activation,
       dnn_in_between=FLAGS.dnn_in_between,
       probabilistic=FLAGS.probabilistic,
       forward_only=forward_only,

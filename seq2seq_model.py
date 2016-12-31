@@ -62,6 +62,7 @@ class Seq2SeqModel(object):
                use_lstm=False,
                num_samples=512,
                optimizer=None,
+               activation=tf.nn.relu,
                dnn_in_between=False,
                probabilistic=False,
                forward_only=False,
@@ -161,6 +162,7 @@ class Seq2SeqModel(object):
            embedding_size=size,
            latent_dim=latent_dim,
            num_layers=num_layers,
+           activation=activation,
            dtype=dtype)
 
     def lower_bounded_kl_f(mean, logvar):
@@ -172,6 +174,7 @@ class Seq2SeqModel(object):
                      embedding_size=size,
                      latent_dim=latent_dim,
                      num_layers=num_layers,
+                     activation=activation,
                      dtype=dtype)
 
     def sample_f(mean, logvar):
@@ -228,7 +231,7 @@ class Seq2SeqModel(object):
           lambda x, y: decoder_f(x, y, True),
           latent_dec_f, sample_f, kl_f,
           softmax_loss_function=softmax_loss_function)
-    else if dnn_in_between:
+    elif dnn_in_between:
       self.outputs, self.losses, self.KL_divergences = seq2seq.variational_autoencoder_with_buckets(
           self.encoder_inputs, self.decoder_inputs, targets,
           self.target_weights, buckets, encoder_f, lambda x, y: decoder_f(x, y, True),

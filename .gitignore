@@ -10,3 +10,5 @@ serialize_tensorboard.py
 stats
 4.py
 *.jpg
+dev.txt.en
+line.dev.txt

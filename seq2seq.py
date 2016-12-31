@@ -1473,6 +1473,7 @@ def encoder_to_latent(encoder_state,
                       embedding_size,
                       latent_dim,
                       num_layers,
+                      activation=tf.nn.relu,
                       dtype=None):
   print("encoder_to_latent") 
   if num_layers > 1:
@@ -1482,12 +1483,12 @@ def encoder_to_latent(encoder_state,
       w = tf.get_variable("w",[num_layers * embedding_size, latent_dim],
         dtype=dtype)
       b = tf.get_variable("b", [latent_dim], dtype=dtype)
-      mean = tf.nn.relu(tf.matmul(encoder_state, w) + b)
+      mean = activation(tf.matmul(encoder_state, w) + b)
     with tf.variable_scope('logvar'):
       w = tf.get_variable("w",
         [num_layers * embedding_size, latent_dim], dtype=dtype)
       b = tf.get_variable("b", [latent_dim], dtype=dtype)
-      logvar = tf.nn.relu(tf.matmul(encoder_state, w) + b)
+      logvar = activation(tf.matmul(encoder_state, w) + b)
 
   return mean, logvar
 
@@ -1496,6 +1497,7 @@ def latent_to_decoder(latent_vector,
                       embedding_size,
                       latent_dim,
                       num_layers,
+                      activation=tf.nn.relu,
                       dtype=None):
 
   print("latent_to_decoder") 
@@ -1503,7 +1505,7 @@ def latent_to_decoder(latent_vector,
     w = tf.get_variable("w",[latent_dim, num_layers * embedding_size],
       dtype=dtype)
     b = tf.get_variable("b", [num_layers * embedding_size], dtype=dtype)
-    decoder_initial_state = tf.nn.relu(tf.matmul(latent_vector, w) + b)
+    decoder_initial_state = activation(tf.matmul(latent_vector, w) + b)
   if num_layers > 1:
     decoder_initial_state = tf.split(1, num_layers, decoder_initial_state)
 
