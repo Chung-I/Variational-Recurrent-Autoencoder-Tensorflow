@@ -76,6 +76,8 @@ tf.app.flags.DEFINE_integer("max_train_data_size", 0,
                             "Limit on the size of training data (0: no limit).")
 tf.app.flags.DEFINE_integer("steps_per_checkpoint", 200,
                             "How many training steps to do per checkpoint.")
+tf.app.flags.DEFINE_integer("num_pts", 1,
+                            "Number of points between start point and end point.")
 tf.app.flags.DEFINE_boolean("decode", False,
                             "Set to True for interactive decoding.")
 tf.app.flags.DEFINE_boolean("adam", True,
@@ -87,13 +89,17 @@ tf.app.flags.DEFINE_boolean("use_fp16", False,
 tf.app.flags.DEFINE_boolean("new", True,
                             "Train a new model.")
 tf.app.flags.DEFINE_boolean("dnn_in_between", False,
-                            "use variational layer or not.")
+                            "use dnn layer between encoder and decoder or not.")
 tf.app.flags.DEFINE_boolean("probabilistic", False,
                             "use probabilistic layer or not.")
 tf.app.flags.DEFINE_boolean("annealing", False,
                             "use kl cost annealing or not.")
 tf.app.flags.DEFINE_boolean("elu", False,
                             "use elu or not. If False, use relu.")
+tf.app.flags.DEFINE_boolean("interpolate", False,
+                            "set to True for interpolating.")
+tf.app.flags.DEFINE_boolean("encode", False,
+                            "set to True for encoding.")
 tf.app.flags.DEFINE_boolean("feed_previous", True,
                             "if True, inputs are feeded with last output.")
 
@@ -341,7 +347,7 @@ def train():
         sys.stdout.flush()
 
 
-def decode():
+def autoencode():
   with tf.Session() as sess:
     # Create model and load parameters.
     model = create_model(sess, True)
@@ -388,6 +394,61 @@ def decode():
           fo.write(" ".join([rev_fr_vocab[output] for output in outputs]) + "\n")
 
 
+def encode(sess, model, sentences):
+  # Load vocabularies.
+  en_vocab_path = os.path.join(FLAGS.data_dir,
+                               "vocab%d.en" % FLAGS.en_vocab_size)
+  fr_vocab_path = os.path.join(FLAGS.data_dir,
+                               "vocab%d.fr" % FLAGS.fr_vocab_size)
+  en_vocab, _ = data_utils.initialize_vocabulary(en_vocab_path)
+  _, rev_fr_vocab = data_utils.initialize_vocabulary(fr_vocab_path)
+  
+  means = []
+  for i, sentence in enumerate(sentences):
+    # Get token-ids for the input sentence.
+    token_ids = data_utils.sentence_to_token_ids(sentence, en_vocab)
+    # Which bucket does it belong to?
+    bucket_id = len(_buckets) - 1
+    for i, bucket in enumerate(_buckets):
+      if bucket[0] >= len(token_ids):
+        bucket_id = i
+        break
+    else:
+      logging.warning("Sentence truncated: %s", sentence) 
+
+        # Get a 1-element batch to feed the sentence to the model.
+    encoder_inputs, _, _ = model.get_batch(
+        {bucket_id: [(token_ids, [])]}, bucket_id)
+    # Get output logits for the sentence.
+    mean = model.encode_to_latent(sess, encoder_inputs, bucket_id)
+    means.append(mean)
+
+  return means  
+
+
+def interpolate(sess, model, means, num_pts):
+  if len(means) != 2:
+    raise ValueError("there should be two sentences when interpolating."
+                     "number of setences: %d." % len(means))
+  if num_pts < 3:
+    raise ValueError("there should be more than two points when interpolating."
+                     "number of points: %d." % num_pts)
+  pts = []
+  for s, e in zip(means[0].tolist(),means[1].tolist()):
+    pts.append(np.linspace(s, e, num_pts))
+
+  pts = np.array(pts)
+  pts = pts.T
+  output_logits = model.decode_from_latent(sess, pts, len(_bucket) - 1)
+  outputs = [int(np.argmax(logit, axis=1)) for logit in output_logits]
+  # If there is an EOS symbol in outputs, cut them at that point.
+  if data_utils.EOS_ID in outputs:
+    outputs = outputs[:outputs.index(data_utils.EOS_ID)]
+  # Print out French sentence corresponding to outputs.
+  with gfile.GFile(FLAGS.ckpt + ".interpolate.txt", "w") as fo:
+    fo.write(" ".join([rev_fr_vocab[output] for output in outputs]) + "\n")
+
+
 def self_test():
   """Test the translation model."""
   with tf.Session() as sess:
@@ -413,7 +474,17 @@ def main(_):
   if FLAGS.self_test:
     self_test()
   elif FLAGS.decode:
-    decode()
+    autoencode()
+  elif FLAGS.interpolate:
+    if FLAGS.encode:
+      with tf.session() as sess:
+        model = create_model(sess, True)
+        with gfile.GFile(FLAGS.input_file, "r") as fs:
+          sentences = fs.readlines()
+        model.batch_size = 1
+        means = encode(sess, model, sentences)
+        model.batch_size = FLAGS.num_pts
+        interpolate(sess, model, means, FLAGS.num_pts)
   else:
     train()
 
