@@ -28,6 +28,7 @@ import tensorflow as tf
 import data_utils
 import seq2seq
 import pdb
+from bnlstm import BNLSTMCell
 
 class Seq2SeqModel(object):
   """Sequence-to-sequence model with attention and for multiple buckets.
@@ -66,6 +67,7 @@ class Seq2SeqModel(object):
                activation=tf.nn.relu,
                dnn_in_between=False,
                probabilistic=False,
+               batch_norm=False,
                forward_only=False,
                feed_previous=True,
                dtype=tf.float32):
@@ -135,6 +137,9 @@ class Seq2SeqModel(object):
     # Create the internal multi-layer cell for our RNN.
     single_cell = tf.nn.rnn_cell.GRUCell(size)
     if use_lstm:
+      if batch_norm:
+        single_cell = BNLSTMCell(size)
+      else:
       single_cell = tf.nn.rnn_cell.BasicLSTMCell(size)
     cell = single_cell
     if num_layers > 1:

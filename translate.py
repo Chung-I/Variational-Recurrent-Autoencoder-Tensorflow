@@ -102,6 +102,10 @@ tf.app.flags.DEFINE_boolean("encode", False,
                             "set to True for encoding.")
 tf.app.flags.DEFINE_boolean("feed_previous", True,
                             "if True, inputs are feeded with last output.")
+tf.app.flags.DEFINE_boolean("batch_norm", False,
+                            "if True, use batch normalized LSTM.")
+tf.app.flags.DEFINE_boolean("use_lstm", False,
+                            "if True, use LSTM.")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -172,10 +176,12 @@ def create_model(session, forward_only):
       FLAGS.annealing,
       FLAGS.kl_rate_rise_time,
       FLAGS.kl_rate_rise_factor,
+      FLAGS.use_lstm,
       optimizer=optimizer,
       activation=activation,
       dnn_in_between=FLAGS.dnn_in_between,
       probabilistic=FLAGS.probabilistic,
+      batch_norm=FLAGS.batch_norm,
       forward_only=forward_only,
       feed_previous=FLAGS.feed_previous,
       dtype=dtype)
@@ -246,6 +252,7 @@ def train():
     previous_losses = []
     step_loss_summaries = []
     step_KL_loss_summaries = []
+    overall_start_time = time.time()
     while True:
       # Choose a bucket according to data distribution. We pick a random number
       # in [0, 1] and use the corresponding interval in train_buckets_scale.
@@ -277,6 +284,7 @@ def train():
         print ("global step %d learning rate %.4f step-time %.2f KL divergence "
                "%.2f" % (model.global_step.eval(), model.learning_rate.eval(),
                          step_time, KL_loss))
+        print("time passed: {0}".format(time.time() - overall_start_time))
 
         # Add perplexity, KL divergence to summary and stats.
         perp_summary = tf.Summary(value=[tf.Summary.Value(tag="train perplexity", simple_value=perplexity)])
