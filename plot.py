@@ -9,7 +9,7 @@ def loss_dict_to_arr(stat_dict, step_size):
   curr_step = step_size
   stat_arr = []
   none_combo = 0
-  while none_combo < 4:
+  while none_combo < 10:
     loss_val = stat_dict.get(str(curr_step))
     stat_arr.append(loss_val)
     if loss_val:

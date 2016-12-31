@@ -71,6 +71,7 @@ tf.app.flags.DEFINE_string("data_dir", "corpus/poem_based", "Data directory")
 tf.app.flags.DEFINE_string("train_dir", "models", "Training directory.")
 tf.app.flags.DEFINE_string("ckpt", "translate", "checkpoint file name.")
 tf.app.flags.DEFINE_string("input_file", "input.txt", "input file name.")
+tf.app.flags.DEFINE_string("buckets", "[0,1,2]", "which buckets to use.")
 tf.app.flags.DEFINE_integer("max_train_data_size", 0,
                             "Limit on the size of training data (0: no limit).")
 tf.app.flags.DEFINE_integer("steps_per_checkpoint", 200,
@@ -101,7 +102,9 @@ FLAGS = tf.app.flags.FLAGS
 
 # We use a number of buckets and pad to the closest one for efficiency.
 # See seq2seq_model.Seq2SeqModel for details of how they work.
-_buckets = [(70,70)]
+_buckets = [(8, 10), (33, 35), (65, 67)]
+
+_buckets = [_buckets[i] for i in json.loads(FLAGS.buckets)]
 
 
 def read_data(source_path, target_path, max_size=None):

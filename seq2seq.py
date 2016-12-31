@@ -1475,6 +1475,7 @@ def encoder_to_latent(encoder_state,
                       num_layers,
                       activation=tf.nn.relu,
                       dtype=None):
+  print(activation)
   print("encoder_to_latent") 
   if num_layers > 1:
     encoder_state = tf.concat(1, encoder_state)
