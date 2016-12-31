@@ -76,7 +76,7 @@ tf.app.flags.DEFINE_integer("max_train_data_size", 0,
                             "Limit on the size of training data (0: no limit).")
 tf.app.flags.DEFINE_integer("steps_per_checkpoint", 200,
                             "How many training steps to do per checkpoint.")
-tf.app.flags.DEFINE_integer("num_pts", 1,
+tf.app.flags.DEFINE_integer("num_pts", 3,
                             "Number of points between start point and end point.")
 tf.app.flags.DEFINE_boolean("decode", False,
                             "Set to True for interactive decoding.")
@@ -426,6 +426,34 @@ def encode(sess, model, sentences):
   return means  
 
 
+#def interpolate(sess, model, means, num_pts):
+#  if len(means) != 2:
+#    raise ValueError("there should be two sentences when interpolating."
+#                     "number of setences: %d." % len(means))
+#  if num_pts < 3:
+#    raise ValueError("there should be more than two points when interpolating."
+#                     "number of points: %d." % num_pts)
+#  pts = []
+#  for s, e in zip(means[0][0][0].tolist(),means[1][0][0].tolist()):
+#    pts.append(np.linspace(s, e, num_pts))
+#
+#  pts = np.array(pts)
+#  pts = pts.T
+#  bucket_id = len(_buckets) - 1
+#  _, decoder_inputs, target_weights = model.get_batch(
+#    {bucket_id: [([[] for _ in range(num_pts)], [[] for _ in range(num_pts)])]}, bucket_id)
+#  logvars = np.zeros(shape=pts.shape)
+#  output_logits = model.decode_from_latent(sess, pts, logvars, bucket_id, decoder_inputs, target_weights)
+#  pdb.set_trace()
+#  outputs = [int(np.argmax(logit, axis=1)) for logit in output_logits]
+#  # If there is an EOS symbol in outputs, cut them at that point.
+#  if data_utils.EOS_ID in outputs:
+#    outputs = outputs[:outputs.index(data_utils.EOS_ID)]
+#  # Print out French sentence corresponding to outputs.
+#  with gfile.GFile(FLAGS.ckpt + ".interpolate.txt", "w") as fo:
+#    fo.write(" ".join([rev_fr_vocab[output] for output in outputs]) + "\n")
+
+
 def interpolate(sess, model, means, num_pts):
   if len(means) != 2:
     raise ValueError("there should be two sentences when interpolating."
@@ -434,19 +462,33 @@ def interpolate(sess, model, means, num_pts):
     raise ValueError("there should be more than two points when interpolating."
                      "number of points: %d." % num_pts)
   pts = []
-  for s, e in zip(means[0].tolist(),means[1].tolist()):
+  for s, e in zip(means[0][0][0].tolist(),means[1][0][0].tolist()):
     pts.append(np.linspace(s, e, num_pts))
+
+  en_vocab_path = os.path.join(FLAGS.data_dir,
+                               "vocab%d.en" % FLAGS.en_vocab_size)
+  fr_vocab_path = os.path.join(FLAGS.data_dir,
+                               "vocab%d.fr" % FLAGS.fr_vocab_size)
+  en_vocab, _ = data_utils.initialize_vocabulary(en_vocab_path)
+  _, rev_fr_vocab = data_utils.initialize_vocabulary(fr_vocab_path)
 
   pts = np.array(pts)
   pts = pts.T
-  output_logits = model.decode_from_latent(sess, pts, len(_bucket) - 1)
-  outputs = [int(np.argmax(logit, axis=1)) for logit in output_logits]
-  # If there is an EOS symbol in outputs, cut them at that point.
-  if data_utils.EOS_ID in outputs:
-    outputs = outputs[:outputs.index(data_utils.EOS_ID)]
-  # Print out French sentence corresponding to outputs.
+  bucket_id = len(_buckets) - 1
   with gfile.GFile(FLAGS.ckpt + ".interpolate.txt", "w") as fo:
-    fo.write(" ".join([rev_fr_vocab[output] for output in outputs]) + "\n")
+    for idx in range(num_pts):
+      _, decoder_inputs, target_weights = model.get_batch(
+          {bucket_id: [([], [])]}, bucket_id)
+      pt = pts[idx].reshape(1,-1)
+      logvar = np.zeros(shape=pt.shape)
+      output_logits = model.decode_from_latent(sess, pt, logvar, bucket_id, decoder_inputs, target_weights)
+      outputs = [int(np.argmax(logit, axis=1)) for logit in output_logits]
+      # If there is an EOS symbol in outputs, cut them at that point.
+      if data_utils.EOS_ID in outputs:
+        outputs = outputs[:outputs.index(data_utils.EOS_ID)]
+      # Print out French sentence corresponding to outputs.
+      fo.write(" ".join([rev_fr_vocab[output] for output in outputs]) + "\n")
+
 
 
 def self_test():
@@ -477,13 +519,12 @@ def main(_):
     autoencode()
   elif FLAGS.interpolate:
     if FLAGS.encode:
-      with tf.session() as sess:
+      with tf.Session() as sess:
         model = create_model(sess, True)
         with gfile.GFile(FLAGS.input_file, "r") as fs:
           sentences = fs.readlines()
         model.batch_size = 1
         means = encode(sess, model, sentences)
-        model.batch_size = FLAGS.num_pts
         interpolate(sess, model, means, FLAGS.num_pts)
   else:
     train()

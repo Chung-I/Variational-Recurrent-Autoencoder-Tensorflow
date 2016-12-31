@@ -27,6 +27,7 @@ import tensorflow as tf
 
 import data_utils
 import seq2seq
+import pdb
 
 class Seq2SeqModel(object):
   """Sequence-to-sequence model with attention and for multiple buckets.
@@ -352,23 +353,24 @@ class Seq2SeqModel(object):
     for l in xrange(encoder_size):
       input_feed[self.encoder_inputs[l].name] = encoder_inputs[l]
 
-      for l in xrange(decoder_size):  # Output logits.
-        output_feed.append(self.outputs[bucket_id][l])
-
     output_feed = self.means
     means = session.run(output_feed, input_feed)
 
     return means
 
 
-  def decode_from_latent(self, session, means, bucket_id):
+  def decode_from_latent(self, session, means, logvars, bucket_id, decoder_inputs, target_weights):
 
     _, decoder_size = self.buckets[bucket_id]
-
     # Input feed: means.
-    input_feed = {}
-    input_feed[self.means] = means
+    input_feed = {self.means[bucket_id]: means, self.logvars[bucket_id]: logvars}
+    for l in xrange(decoder_size):
+      input_feed[self.decoder_inputs[l].name] = decoder_inputs[l]
+      input_feed[self.target_weights[l].name] = target_weights[l]
 
+    last_target = self.decoder_inputs[decoder_size].name
+    input_feed[last_target] = np.zeros([self.batch_size], dtype=np.int32)
+    output_feed = []
     for l in xrange(decoder_size):  # Output logits.
       output_feed.append(self.outputs[bucket_id][l])
 

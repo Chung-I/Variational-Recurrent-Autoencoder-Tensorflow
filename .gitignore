@@ -12,3 +12,5 @@ stats
 *.jpg
 dev.txt.en
 line.dev.txt
+interp.txt
+*interpolate.txt
