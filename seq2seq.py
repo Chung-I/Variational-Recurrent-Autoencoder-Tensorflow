@@ -1473,21 +1473,40 @@ def encoder_to_latent(encoder_state,
                       embedding_size,
                       latent_dim,
                       num_layers,
+                      activation=tf.nn.relu,
+                      use_lstm=False,
+                      mean_logvar_split=False,
                       dtype=None):
+  print(activation)
   print("encoder_to_latent") 
+  concat_state_size = num_layers * embedding_size
+  if use_lstm:
+    concat_state_size *= 2
+    if num_layers > 1:
+      encoder_state = list(map(lambda state_tuple: tf.concat(1, state_tuple), encoder_state))
+    else:
+      encoder_state = tf.concat(1, encoder_state)
   if num_layers > 1:
     encoder_state = tf.concat(1, encoder_state)
   with tf.variable_scope('encoder_to_latent'):
-    with tf.variable_scope('mean'):
-      w = tf.get_variable("w",[num_layers * embedding_size, latent_dim],
+    if mean_logvar_split:
+      with tf.variable_scope('mean'):
+        w = tf.get_variable("w",
+          [concat_state_size, latent_dim], dtype=dtype)
+        b = tf.get_variable("b", [latent_dim], dtype=dtype)
+        mean = activation(tf.matmul(encoder_state, w) + b)
+      with tf.variable_scope('logvar'):
+        w = tf.get_variable("w",
+          [concat_state_size, latent_dim], dtype=dtype)
+        b = tf.get_variable("b", [latent_dim], dtype=dtype)
+        logvar = activation(tf.matmul(encoder_state, w) + b)
+    else:
+      w = tf.get_variable("w",[concat_state_size, 2 * latent_dim],
         dtype=dtype)
-      b = tf.get_variable("b", [latent_dim], dtype=dtype)
-      mean = tf.nn.relu(tf.matmul(encoder_state, w) + b)
-    with tf.variable_scope('logvar'):
-      w = tf.get_variable("w",
-        [num_layers * embedding_size, latent_dim], dtype=dtype)
-      b = tf.get_variable("b", [latent_dim], dtype=dtype)
-      logvar = tf.nn.relu(tf.matmul(encoder_state, w) + b)
+      b = tf.get_variable("b", [2 * latent_dim], dtype=dtype)
+      mean_logvar = activation(tf.matmul(encoder_state, w) + b)
+      mean, logvar = tf.split(1, 2, mean_logvar)
+    
 
   return mean, logvar
 
@@ -1496,16 +1515,25 @@ def latent_to_decoder(latent_vector,
                       embedding_size,
                       latent_dim,
                       num_layers,
+                      activation=tf.nn.relu,
+                      use_lstm=False,
                       dtype=None):
 
   print("latent_to_decoder") 
+  concat_state_size = num_layers * embedding_size
+  if use_lstm:
+    concat_state_size *= 2
   with tf.variable_scope('latent_to_decoder'):
-    w = tf.get_variable("w",[latent_dim, num_layers * embedding_size],
+    w = tf.get_variable("w",[latent_dim, concat_state_size],
       dtype=dtype)
-    b = tf.get_variable("b", [num_layers * embedding_size], dtype=dtype)
-    decoder_initial_state = tf.nn.relu(tf.matmul(latent_vector, w) + b)
+    b = tf.get_variable("b", [concat_state_size], dtype=dtype)
+    decoder_initial_state = activation(tf.matmul(latent_vector, w) + b)
   if num_layers > 1:
-    decoder_initial_state = tf.split(1, num_layers, decoder_initial_state)
+    decoder_initial_state = tuple(tf.split(1, num_layers, decoder_initial_state))
+    if use_lstm:
+      decoder_initial_state = [tuple(tf.split(1, 2, single_layer_state)) for single_layer_state in decoder_initial_state]
+  elif use_lstm:
+    decoder_initial_state = tuple(tf.split(1, 2, decoder_initial_state))
 
   return decoder_initial_state
 
@@ -1619,7 +1647,7 @@ def variational_encoder_with_buckets(encoder_inputs, buckets, encoder,
 
 def variational_decoder_with_buckets(means, logvars, decoder_inputs,
                        targets, weights,
-                       buckets, decoder, latent_dec, sample, kl_f,
+                       buckets, decoder, latent_dec, kl_f, sample=None,
                        softmax_loss_function=None,
                        per_example_loss=False, name=None):
   """Create a sequence-to-sequence model with support for bucketing.
@@ -1640,7 +1668,10 @@ def variational_decoder_with_buckets(means, logvars, decoder_inputs,
     for j, bucket in enumerate(buckets):
       with variable_scope.variable_scope(variable_scope.get_variable_scope(),
                                            reuse=True if j > 0 else None):
-        latent_vector = sample(means[j], logvars[j])
+        if sample:
+          latent_vector = sample(means[j], logvars[j])
+        else:
+          latent_vector = means[j]
         decoder_initial_state = latent_dec(latent_vector)
         bucket_outputs, _ = decoder(decoder_initial_state, decoder_inputs[:bucket[1]])
         outputs.append(bucket_outputs)

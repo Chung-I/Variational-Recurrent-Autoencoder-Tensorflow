@@ -27,6 +27,8 @@ import tensorflow as tf
 
 import data_utils
 import seq2seq
+import pdb
+from bnlstm import BNLSTMCell
 
 class Seq2SeqModel(object):
   """Sequence-to-sequence model with attention and for multiple buckets.
@@ -57,13 +59,17 @@ class Seq2SeqModel(object):
                latent_splits=8,
                Lambda=2,
                annealing=False,
+               lower_bound_KL=True,
                kl_rate_rise_time=None,
                kl_rate_rise_factor=None,
                use_lstm=False,
+               mean_logvar_split=False,
                num_samples=512,
                optimizer=None,
+               activation=tf.nn.relu,
                dnn_in_between=False,
                probabilistic=False,
+               batch_norm=False,
                forward_only=False,
                feed_previous=True,
                dtype=tf.float32):
@@ -129,11 +135,14 @@ class Seq2SeqModel(object):
                                        num_samples, self.target_vocab_size),
             dtype)
       softmax_loss_function = sampled_loss
-
     # Create the internal multi-layer cell for our RNN.
     single_cell = tf.nn.rnn_cell.GRUCell(size)
     if use_lstm:
-      single_cell = tf.nn.rnn_cell.BasicLSTMCell(size)
+      if batch_norm:
+        tf_forward_only = tf.Variable(forward_only)
+        single_cell = BNLSTMCell(size, tf_forward_only)
+      else:
+        single_cell = tf.nn.rnn_cell.BasicLSTMCell(size)
     cell = single_cell
     if num_layers > 1:
       cell = tf.nn.rnn_cell.MultiRNNCell([single_cell] * num_layers)
@@ -161,6 +170,8 @@ class Seq2SeqModel(object):
            embedding_size=size,
            latent_dim=latent_dim,
            num_layers=num_layers,
+           activation=activation,
+           use_lstm=use_lstm,
            dtype=dtype)
 
     def lower_bounded_kl_f(mean, logvar):
@@ -172,6 +183,9 @@ class Seq2SeqModel(object):
                      embedding_size=size,
                      latent_dim=latent_dim,
                      num_layers=num_layers,
+                     activation=activation,
+                     use_lstm=use_lstm,
+                     mean_logvar_split=mean_logvar_split,
                      dtype=dtype)
 
     def sample_f(mean, logvar):
@@ -213,12 +227,13 @@ class Seq2SeqModel(object):
                for i in xrange(len(self.decoder_inputs) - 1)]
 
 
-    if annealing:
+    if annealing and not lower_bound_KL:
       kl_f = seq2seq.KL_divergence
     else:
       kl_f = lower_bounded_kl_f
     # Training outputs and losses.
-    if probabilistic:
+    if dnn_in_between:
+      sample_f = sample_f if probabilistic else None
       self.means, self.logvars = seq2seq.variational_encoder_with_buckets(
           self.encoder_inputs, buckets, encoder_f, enc_latent_f,
           softmax_loss_function=softmax_loss_function)
@@ -226,14 +241,7 @@ class Seq2SeqModel(object):
           self.means, self.logvars, self.decoder_inputs, targets,
           self.target_weights, buckets,
           lambda x, y: decoder_f(x, y, True),
-          latent_dec_f, sample_f, kl_f,
-          softmax_loss_function=softmax_loss_function)
-    else if dnn_in_between:
-      self.outputs, self.losses, self.KL_divergences = seq2seq.variational_autoencoder_with_buckets(
-          self.encoder_inputs, self.decoder_inputs, targets,
-          self.target_weights, buckets, encoder_f, lambda x, y: decoder_f(x, y, True),
-          enc_latent_f, latent_dec_f, sample_f, kl_f,
-          probabilistic=False,
+          latent_dec_f, kl_f, sample_f,
           softmax_loss_function=softmax_loss_function)
     else:
       self.outputs, self.losses = seq2seq.autoencoder_with_buckets(
@@ -349,23 +357,24 @@ class Seq2SeqModel(object):
     for l in xrange(encoder_size):
       input_feed[self.encoder_inputs[l].name] = encoder_inputs[l]
 
-      for l in xrange(decoder_size):  # Output logits.
-        output_feed.append(self.outputs[bucket_id][l])
+    output_feed = [self.means, self.logvars]
+    means, logvars = session.run(output_feed, input_feed)
 
-    output_feed = self.means
-    means = session.run(output_feed, input_feed)
-
-    return means
+    return means, logvars
 
 
-  def decode_from_latent(self, session, means, bucket_id):
+  def decode_from_latent(self, session, means, logvars, bucket_id, decoder_inputs, target_weights):
 
     _, decoder_size = self.buckets[bucket_id]
-
     # Input feed: means.
-    input_feed = {}
-    input_feed[self.means] = means
+    input_feed = {self.means[bucket_id]: means, self.logvars[bucket_id]: logvars}
+    for l in xrange(decoder_size):
+      input_feed[self.decoder_inputs[l].name] = decoder_inputs[l]
+      input_feed[self.target_weights[l].name] = target_weights[l]
 
+    last_target = self.decoder_inputs[decoder_size].name
+    input_feed[last_target] = np.zeros([self.batch_size], dtype=np.int32)
+    output_feed = []
     for l in xrange(decoder_size):  # Output logits.
       output_feed.append(self.outputs[bucket_id][l])
 
