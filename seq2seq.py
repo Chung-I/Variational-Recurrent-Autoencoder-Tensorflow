@@ -1647,7 +1647,7 @@ def variational_encoder_with_buckets(encoder_inputs, buckets, encoder,
 
 def variational_decoder_with_buckets(means, logvars, decoder_inputs,
                        targets, weights,
-                       buckets, decoder, latent_dec, kl_f, sample=None,
+                       buckets, decoder, latent_dec, kl_f, sample,
                        softmax_loss_function=None,
                        per_example_loss=False, name=None):
   """Create a sequence-to-sequence model with support for bucketing.
@@ -1668,10 +1668,7 @@ def variational_decoder_with_buckets(means, logvars, decoder_inputs,
     for j, bucket in enumerate(buckets):
       with variable_scope.variable_scope(variable_scope.get_variable_scope(),
                                            reuse=True if j > 0 else None):
-        if sample:
-          latent_vector = sample(means[j], logvars[j])
-        else:
-          latent_vector = means[j]
+        latent_vector = sample(means[j], logvars[j])
         decoder_initial_state = latent_dec(latent_vector)
         bucket_outputs, _ = decoder(decoder_initial_state, decoder_inputs[:bucket[1]])
         outputs.append(bucket_outputs)

@@ -96,6 +96,8 @@ class Seq2SeqModel(object):
     """
     self.source_vocab_size = source_vocab_size
     self.target_vocab_size = target_vocab_size
+    self.probabilistic = probabilistic
+    self.latent_dim = latent_dim
     self.buckets = buckets
     self.batch_size = batch_size
     self.learning_rate = tf.Variable(
@@ -229,7 +231,6 @@ class Seq2SeqModel(object):
       kl_f = lower_bounded_kl_f
     # Training outputs and losses.
     if dnn_in_between:
-      sample_f = sample_f if probabilistic else None
       self.means, self.logvars = seq2seq.variational_encoder_with_buckets(
           self.encoder_inputs, buckets, encoder_f, enc_latent_f,
           softmax_loss_function=softmax_loss_function)
@@ -320,6 +321,8 @@ class Seq2SeqModel(object):
     # Since our targets are decoder inputs shifted by one, we need one more.
     last_target = self.decoder_inputs[decoder_size].name
     input_feed[last_target] = np.zeros([self.batch_size], dtype=np.int32)
+    if not self.probabilistic:
+      input_feed[self.logvars[bucket_id]] = np.zeros([self.batch_size, self.latent_dim], dtype=np.int32)
 
     # Output feed: depends on whether we do a backward step or not.
     if not forward_only:

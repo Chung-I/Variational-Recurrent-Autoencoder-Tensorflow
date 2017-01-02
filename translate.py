@@ -56,7 +56,6 @@ default_eval_args = {}
 
 default_args['ckpt'] = "translate"
 
-default_model_args['Lambda'] = 2
 default_model_args['size'] = 128
 default_model_args['num_layers'] = 1
 default_model_args['latent_dim'] = 64
@@ -76,6 +75,7 @@ default_train_args['kl_rate_rise_factor'] = 2
 default_train_args['max_gradient_norm'] = 5.0
 default_train_args['batch_size'] = 64
 default_train_args['kl_rate_rise_time'] = 50000
+default_train_args['Lambda'] = 2
 default_train_args['latent_splits'] = default_model_args['latent_dim']
 default_train_args['max_train_data_size'] = 0
 default_train_args['steps_per_checkpoint'] = 2000
