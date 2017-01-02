@@ -78,6 +78,8 @@ tf.app.flags.DEFINE_integer("steps_per_checkpoint", 200,
                             "How many training steps to do per checkpoint.")
 tf.app.flags.DEFINE_integer("num_pts", 3,
                             "Number of points between start point and end point.")
+tf.app.flags.DEFINE_integer("num_samples", 0,
+                            "Number of points between start point and end point.")
 tf.app.flags.DEFINE_boolean("decode", False,
                             "Set to True for interactive decoding.")
 tf.app.flags.DEFINE_boolean("adam", True,
@@ -106,6 +108,8 @@ tf.app.flags.DEFINE_boolean("batch_norm", False,
                             "if True, use batch normalized LSTM.")
 tf.app.flags.DEFINE_boolean("use_lstm", False,
                             "if True, use LSTM.")
+tf.app.flags.DEFINE_boolean("mean_logvar_split", False,
+                            "True is deprecated and will soon be removed.")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -177,6 +181,7 @@ def create_model(session, forward_only):
       FLAGS.kl_rate_rise_time,
       FLAGS.kl_rate_rise_factor,
       FLAGS.use_lstm,
+      FLAGS.mean_logvar_split,
       optimizer=optimizer,
       activation=activation,
       dnn_in_between=FLAGS.dnn_in_between,
@@ -208,24 +213,6 @@ def train():
     train_writer = tf.summary.FileWriter(FLAGS.model_dir+ "/train", graph=sess.graph)
     dev_writer = tf.summary.FileWriter(FLAGS.model_dir + "/test", graph=sess.graph)
 
-    stat_file_name = "stats/" + FLAGS.ckpt + ".json" 
-    if FLAGS.new:
-      if os.path.exists(stat_file_name):
-        print("error: create an already existed statistics file")
-        sys.exit()
-      stats = {}
-      stats['hyperparameters'] = FLAGS.__dict__['__flags']
-      stats['model_name'] = stats['hyperparameters']['ckpt']
-      stats['train_perplexity'] = {}
-      stats['train_KL_divergence'] = {}
-      stats['eval_KL_divergence'] = {}
-      stats['eval_perplexity'] = {}
-      with open(stat_file_name, "w") as statfile:
-        statfile.write(json.dumps(stats))
-    else:
-      with open(stat_file_name, "r") as statfile:
-        statjson = statfile.read()
-        stats = json.loads(statjson)
 
     # Create model.
     print("Creating %d layers of %d units." % (FLAGS.num_layers, FLAGS.size))
@@ -244,6 +231,26 @@ def train():
     # the size if i-th training bucket, as used later.
     train_buckets_scale = [sum(train_bucket_sizes[:i + 1]) / train_total_size
                            for i in xrange(len(train_bucket_sizes))]
+
+    stat_file_name = "stats/" + FLAGS.ckpt + ".json" 
+    if FLAGS.new:
+      if os.path.exists(stat_file_name):
+        print("error: create an already existed statistics file")
+        sys.exit()
+      stats = {}
+      stats['hyperparameters'] = FLAGS.__dict__['__flags']
+      stats['model_name'] = stats['hyperparameters']['ckpt']
+      stats['train_perplexity'] = {}
+      stats['train_KL_divergence'] = {}
+      stats['eval_KL_divergence'] = {}
+      stats['eval_perplexity'] = {}
+      stats['wall_time'] = {}
+      with open(stat_file_name, "w") as statfile:
+        statfile.write(json.dumps(stats))
+    else:
+      with open(stat_file_name, "r") as statfile:
+        statjson = statfile.read()
+        stats = json.loads(statjson)
 
     # This is the training loop.
     step_time, loss = 0.0, 0.0
@@ -284,7 +291,9 @@ def train():
         print ("global step %d learning rate %.4f step-time %.2f KL divergence "
                "%.2f" % (model.global_step.eval(), model.learning_rate.eval(),
                          step_time, KL_loss))
-        print("time passed: {0}".format(time.time() - overall_start_time))
+        wall_time = time.time() - overall_start_time
+        print("time passed: {0}".format(wall_time))
+        stats['wall_time'][str(current_step)] = wall_time
 
         # Add perplexity, KL divergence to summary and stats.
         perp_summary = tf.Summary(value=[tf.Summary.Value(tag="train perplexity", simple_value=perplexity)])
@@ -412,6 +421,7 @@ def encode(sess, model, sentences):
   _, rev_fr_vocab = data_utils.initialize_vocabulary(fr_vocab_path)
   
   means = []
+  logvars = []
   for i, sentence in enumerate(sentences):
     # Get token-ids for the input sentence.
     token_ids = data_utils.sentence_to_token_ids(sentence, en_vocab)
@@ -428,41 +438,49 @@ def encode(sess, model, sentences):
     encoder_inputs, _, _ = model.get_batch(
         {bucket_id: [(token_ids, [])]}, bucket_id)
     # Get output logits for the sentence.
-    mean = model.encode_to_latent(sess, encoder_inputs, bucket_id)
+    mean, logvar = model.encode_to_latent(sess, encoder_inputs, bucket_id)
     means.append(mean)
+    logvars.append(logvar)
 
-  return means  
-
-
-#def interpolate(sess, model, means, num_pts):
-#  if len(means) != 2:
-#    raise ValueError("there should be two sentences when interpolating."
-#                     "number of setences: %d." % len(means))
-#  if num_pts < 3:
-#    raise ValueError("there should be more than two points when interpolating."
-#                     "number of points: %d." % num_pts)
-#  pts = []
-#  for s, e in zip(means[0][0][0].tolist(),means[1][0][0].tolist()):
-#    pts.append(np.linspace(s, e, num_pts))
-#
-#  pts = np.array(pts)
-#  pts = pts.T
-#  bucket_id = len(_buckets) - 1
-#  _, decoder_inputs, target_weights = model.get_batch(
-#    {bucket_id: [([[] for _ in range(num_pts)], [[] for _ in range(num_pts)])]}, bucket_id)
-#  logvars = np.zeros(shape=pts.shape)
-#  output_logits = model.decode_from_latent(sess, pts, logvars, bucket_id, decoder_inputs, target_weights)
-#  pdb.set_trace()
-#  outputs = [int(np.argmax(logit, axis=1)) for logit in output_logits]
-#  # If there is an EOS symbol in outputs, cut them at that point.
-#  if data_utils.EOS_ID in outputs:
-#    outputs = outputs[:outputs.index(data_utils.EOS_ID)]
-#  # Print out French sentence corresponding to outputs.
-#  with gfile.GFile(FLAGS.ckpt + ".interpolate.txt", "w") as fo:
-#    fo.write(" ".join([rev_fr_vocab[output] for output in outputs]) + "\n")
+  return means, logvars
 
 
-def interpolate(sess, model, means, num_pts):
+def decode(sess, model, means, logvars, bucket_id):
+  fr_vocab_path = os.path.join(FLAGS.data_dir,
+                               "vocab%d.fr" % FLAGS.fr_vocab_size)
+  _, rev_fr_vocab = data_utils.initialize_vocabulary(fr_vocab_path)
+
+  _, decoder_inputs, target_weights = model.get_batch(
+      {bucket_id: [([], [])]}, bucket_id)
+  outputs = []
+  for mean, logvar in zip(means, logvars):
+    mean = mean.reshape(1,-1)
+    logvar = logvar.reshape(1,-1)
+    output_logits = model.decode_from_latent(sess, mean, logvar, bucket_id, decoder_inputs, target_weights)
+    output = [int(np.argmax(logit, axis=1)) for logit in output_logits]
+    # If there is an EOS symbol in outputs, cut them at that point.
+    if data_utils.EOS_ID in output:
+      output = output[:output.index(data_utils.EOS_ID)]
+    output = " ".join([rev_fr_vocab[word] for word in output]) + "\n"
+    outputs.append(output)
+
+  return outputs
+  # Print out French sentence corresponding to outputs.
+
+def n_sample(sess, model, sentence, num_sample):
+  mean, logvar = encode(sess, model, [sentence])
+  mean = mean[0][0][0]
+  logvar = logvar[0][0][0]
+  means = [mean] * num_sample
+  zero_logvar = np.zeros(shape=logvar.shape)
+  logvars = [zero_logvar] + [logvar] * (num_sample - 1)
+  outputs = decode(sess, model, means, logvars, len(_buckets) - 1)
+  with gfile.GFile(FLAGS.ckpt + ".{0}_sample.txt".format(num_sample), "w") as fo:
+    for output in outputs:
+      fo.write(output)
+  
+
+def interpolate(sess, model, means, logvars, num_pts):
   if len(means) != 2:
     raise ValueError("there should be two sentences when interpolating."
                      "number of setences: %d." % len(means))
@@ -473,29 +491,16 @@ def interpolate(sess, model, means, num_pts):
   for s, e in zip(means[0][0][0].tolist(),means[1][0][0].tolist()):
     pts.append(np.linspace(s, e, num_pts))
 
-  en_vocab_path = os.path.join(FLAGS.data_dir,
-                               "vocab%d.en" % FLAGS.en_vocab_size)
-  fr_vocab_path = os.path.join(FLAGS.data_dir,
-                               "vocab%d.fr" % FLAGS.fr_vocab_size)
-  en_vocab, _ = data_utils.initialize_vocabulary(en_vocab_path)
-  _, rev_fr_vocab = data_utils.initialize_vocabulary(fr_vocab_path)
 
   pts = np.array(pts)
   pts = pts.T
+  pts = [np.array(pt) for pt in pts.tolist()]
   bucket_id = len(_buckets) - 1
   with gfile.GFile(FLAGS.ckpt + ".interpolate.txt", "w") as fo:
-    for idx in range(num_pts):
-      _, decoder_inputs, target_weights = model.get_batch(
-          {bucket_id: [([], [])]}, bucket_id)
-      pt = pts[idx].reshape(1,-1)
-      logvar = np.zeros(shape=pt.shape)
-      output_logits = model.decode_from_latent(sess, pt, logvar, bucket_id, decoder_inputs, target_weights)
-      outputs = [int(np.argmax(logit, axis=1)) for logit in output_logits]
-      # If there is an EOS symbol in outputs, cut them at that point.
-      if data_utils.EOS_ID in outputs:
-        outputs = outputs[:outputs.index(data_utils.EOS_ID)]
-      # Print out French sentence corresponding to outputs.
-      fo.write(" ".join([rev_fr_vocab[output] for output in outputs]) + "\n")
+    logvars = [np.zeros(shape=pt.shape) for pt in pts]
+    outputs = decode(sess, model, pts, logvars, bucket_id)
+    for output in outputs:
+      fo.write(output)
 
 
 
@@ -532,8 +537,16 @@ def main(_):
         with gfile.GFile(FLAGS.input_file, "r") as fs:
           sentences = fs.readlines()
         model.batch_size = 1
-        means = encode(sess, model, sentences)
-        interpolate(sess, model, means, FLAGS.num_pts)
+        means, logvars = encode(sess, model, sentences)
+        interpolate(sess, model, means, logvars, FLAGS.num_pts)
+  elif FLAGS.num_samples > 0:
+    with tf.Session() as sess:
+      model = create_model(sess, True)
+      with gfile.GFile(FLAGS.input_file, "r") as fs:
+        sentence = fs.readline()
+      model.batch_size = 1
+      n_sample(sess, model, sentence, FLAGS.num_samples)
+    
   else:
     train()
 

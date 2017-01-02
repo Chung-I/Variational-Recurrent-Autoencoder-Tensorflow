@@ -62,6 +62,7 @@ class Seq2SeqModel(object):
                kl_rate_rise_time=None,
                kl_rate_rise_factor=None,
                use_lstm=False,
+               mean_logvar_split=False,
                num_samples=512,
                optimizer=None,
                activation=tf.nn.relu,
@@ -133,14 +134,14 @@ class Seq2SeqModel(object):
                                        num_samples, self.target_vocab_size),
             dtype)
       softmax_loss_function = sampled_loss
-
     # Create the internal multi-layer cell for our RNN.
     single_cell = tf.nn.rnn_cell.GRUCell(size)
     if use_lstm:
       if batch_norm:
-        single_cell = BNLSTMCell(size)
+        tf_forward_only = tf.Variable(forward_only)
+        single_cell = BNLSTMCell(size, tf_forward_only)
       else:
-      single_cell = tf.nn.rnn_cell.BasicLSTMCell(size)
+        single_cell = tf.nn.rnn_cell.BasicLSTMCell(size)
     cell = single_cell
     if num_layers > 1:
       cell = tf.nn.rnn_cell.MultiRNNCell([single_cell] * num_layers)
@@ -169,6 +170,7 @@ class Seq2SeqModel(object):
            latent_dim=latent_dim,
            num_layers=num_layers,
            activation=activation,
+           use_lstm=use_lstm,
            dtype=dtype)
 
     def lower_bounded_kl_f(mean, logvar):
@@ -181,6 +183,8 @@ class Seq2SeqModel(object):
                      latent_dim=latent_dim,
                      num_layers=num_layers,
                      activation=activation,
+                     use_lstm=use_lstm,
+                     mean_logvar_split=mean_logvar_split,
                      dtype=dtype)
 
     def sample_f(mean, logvar):
@@ -227,7 +231,8 @@ class Seq2SeqModel(object):
     else:
       kl_f = lower_bounded_kl_f
     # Training outputs and losses.
-    if probabilistic:
+    if dnn_in_between:
+      sample_f = sample_f if probabilistic else None
       self.means, self.logvars = seq2seq.variational_encoder_with_buckets(
           self.encoder_inputs, buckets, encoder_f, enc_latent_f,
           softmax_loss_function=softmax_loss_function)
@@ -235,14 +240,7 @@ class Seq2SeqModel(object):
           self.means, self.logvars, self.decoder_inputs, targets,
           self.target_weights, buckets,
           lambda x, y: decoder_f(x, y, True),
-          latent_dec_f, sample_f, kl_f,
-          softmax_loss_function=softmax_loss_function)
-    elif dnn_in_between:
-      self.outputs, self.losses, self.KL_divergences = seq2seq.variational_autoencoder_with_buckets(
-          self.encoder_inputs, self.decoder_inputs, targets,
-          self.target_weights, buckets, encoder_f, lambda x, y: decoder_f(x, y, True),
-          enc_latent_f, latent_dec_f, sample_f, kl_f,
-          probabilistic=False,
+          latent_dec_f, kl_f, sample_f,
           softmax_loss_function=softmax_loss_function)
     else:
       self.outputs, self.losses = seq2seq.autoencoder_with_buckets(
@@ -358,10 +356,10 @@ class Seq2SeqModel(object):
     for l in xrange(encoder_size):
       input_feed[self.encoder_inputs[l].name] = encoder_inputs[l]
 
-    output_feed = self.means
-    means = session.run(output_feed, input_feed)
+    output_feed = [self.means, self.logvars]
+    means, logvars = session.run(output_feed, input_feed)
 
-    return means
+    return means, logvars
 
 
   def decode_from_latent(self, session, means, logvars, bucket_id, decoder_inputs, target_weights):
