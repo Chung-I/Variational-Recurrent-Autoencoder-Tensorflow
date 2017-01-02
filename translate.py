@@ -49,11 +49,50 @@ import seq2seq_model
 from tensorflow.python.platform import gfile
 from tensorflow.contrib.tensorboard.plugins import projector
 
+default_args = {}
+default_train_args = {}
+default_model_args = {}
+
+default_args['ckpt'] = "translate"
+
+default_model_args['Lambda'] = 2
+default_model_args['size'] = 128
+default_model_args['num_layers'] = 1
+default_model_args['latent_dim'] = 64
+default_model_args['en_vocab_size'] = 10000
+default_model_args['fr_vocab_size'] = 10000
+default_model_args['data_dir'] = "corpus/line_based"
+default_model_args['train_dir'] = "models"
+default_model_args['dnn_in_between'] = True
+default_model_args['batch_norm'] = False
+default_model_args['use_lstm'] = False
+default_model_args['mean_logvar_split'] = False
+default_model_args['elu'] = True
+
+default_train_args['buckets'] = "[0, 1, 2]"
+default_train_args['learning_rate'] = 0.001
+default_train_args['kl_rate_rise_factor'] = 2
+default_train_args['max_gradient_norm'] = 5.0
+default_train_args['batch_size'] = 64
+default_train_args['kl_rate_rise_time'] = 50000
+default_train_args['latent_splits'] = default_model_args['latent_dim']
+default_train_args['max_train_data_size'] = 0
+default_train_args['steps_per_checkpoint'] = 2000
+default_train_args['probabilistic'] = True
+default_train_args['annealing'] = False
+default_train_args['lower_bound_KL'] = True
+default_train_args['feed_previous'] = True
+
+default_eval_args['input_file'] = "input.txt"
+default_eval_args['num_pts'] = 3
+default_eval_args['num_samples'] = 0
+default_eval_args['decode'] = False
+default_eval_args['self_test'] = False
+default_eval_args['interpolate'] = False
+
 
 tf.app.flags.DEFINE_float("learning_rate", 0.001, "Learning rate.")
 tf.app.flags.DEFINE_float("Lambda", 2, "kl divergence threshold.")
-tf.app.flags.DEFINE_float("learning_rate_decay_factor", 0.99,
-                          "Learning rate decays by this much.")
 tf.app.flags.DEFINE_float("kl_rate_rise_factor", 0.01,
                           "increase of kl rate per 200 step.")
 tf.app.flags.DEFINE_float("max_gradient_norm", 5.0,
@@ -61,13 +100,13 @@ tf.app.flags.DEFINE_float("max_gradient_norm", 5.0,
 tf.app.flags.DEFINE_integer("batch_size", 64,
                             "Batch size to use during training.")
 tf.app.flags.DEFINE_integer("size", 128, "Size of each model layer.")
-tf.app.flags.DEFINE_integer("kl_rate_rise_time", 5000, "when we start to increase our KL rate.")
+tf.app.flags.DEFINE_integer("kl_rate_rise_time", 50000, "when we start to increase our KL rate.")
 tf.app.flags.DEFINE_integer("latent_splits", 64, "kl divergence latent splits.")
 tf.app.flags.DEFINE_integer("num_layers", 1, "Number of layers in the model.")
 tf.app.flags.DEFINE_integer("latent_dim", 64, "latent dimension.")
 tf.app.flags.DEFINE_integer("en_vocab_size", 10000, "English vocabulary size.")
 tf.app.flags.DEFINE_integer("fr_vocab_size", 10000, "French vocabulary size.")
-tf.app.flags.DEFINE_string("data_dir", "corpus/poem_based", "Data directory")
+tf.app.flags.DEFINE_string("data_dir", "corpus/line_based", "Data directory")
 tf.app.flags.DEFINE_string("train_dir", "models", "Training directory.")
 tf.app.flags.DEFINE_string("ckpt", "translate", "checkpoint file name.")
 tf.app.flags.DEFINE_string("input_file", "input.txt", "input file name.")
@@ -82,12 +121,8 @@ tf.app.flags.DEFINE_integer("num_samples", 0,
                             "Number of points between start point and end point.")
 tf.app.flags.DEFINE_boolean("decode", False,
                             "Set to True for interactive decoding.")
-tf.app.flags.DEFINE_boolean("adam", True,
-                            "use adam optimizer.")
 tf.app.flags.DEFINE_boolean("self_test", False,
                             "Run a self-test if this is set to True.")
-tf.app.flags.DEFINE_boolean("use_fp16", False,
-                            "Train using fp16 instead of fp32.")
 tf.app.flags.DEFINE_boolean("new", True,
                             "Train a new model.")
 tf.app.flags.DEFINE_boolean("dnn_in_between", True,
@@ -112,6 +147,33 @@ tf.app.flags.DEFINE_boolean("mean_logvar_split", False,
                             "True is deprecated and will soon be removed.")
 
 FLAGS = tf.app.flags.FLAGS
+
+
+
+if FLAGS.new:
+  if os.path.exists(stat_file_name):
+    print("error: create an already existed statistics file")
+    sys.exit()
+  stats = {}
+  stats['hyperparameters'] = FLAGS.__dict__['__flags']
+  stats['model_name'] = stats['hyperparameters']['ckpt']
+  stats['train_perplexity'] = {}
+  stats['train_KL_divergence'] = {}
+  stats['eval_KL_divergence'] = {}
+  stats['eval_perplexity'] = {}
+  stats['wall_time'] = {}
+  with open(stat_file_name, "w") as statfile:
+    statfile.write(json.dumps(stats))
+else:
+  with open(stat_file_name, "r") as statfile:
+    statjson = statfile.read()
+    stats = json.loads(statjson)
+    hparams = stats['hyperparameters']
+    for key, _ in default_model_args.items():
+      FLAGS[key] = hparams[key]
+    samekeys = [k for k in default_train_args if default_train_args[k] == FLAGS[k]]
+    for k in samekeys:
+      FLAGS[key] = hparams[key]
 
 
 # We use a number of buckets and pad to the closest one for efficiency.
@@ -161,8 +223,8 @@ def read_data(source_path, target_path, max_size=None):
 
 def create_model(session, forward_only):
   """Create translation model and initialize or load parameters in session."""
-  dtype = tf.float16 if FLAGS.use_fp16 else tf.float32
-  optimizer = tf.train.AdamOptimizer(FLAGS.learning_rate) if FLAGS.adam else None
+  dtype = tf.float32
+  optimizer = tf.train.AdamOptimizer(FLAGS.learning_rate)
   activation = tf.nn.elu if FLAGS.elu else tf.nn.relu
   model = seq2seq_model.Seq2SeqModel(
       FLAGS.en_vocab_size,
@@ -214,24 +276,6 @@ def train():
     train_writer = tf.summary.FileWriter(FLAGS.model_dir+ "/train", graph=sess.graph)
     dev_writer = tf.summary.FileWriter(FLAGS.model_dir + "/test", graph=sess.graph)
 
-    if FLAGS.new:
-      if os.path.exists(stat_file_name):
-        print("error: create an already existed statistics file")
-        sys.exit()
-      stats = {}
-      stats['hyperparameters'] = FLAGS.__dict__['__flags']
-      stats['model_name'] = stats['hyperparameters']['ckpt']
-      stats['train_perplexity'] = {}
-      stats['train_KL_divergence'] = {}
-      stats['eval_KL_divergence'] = {}
-      stats['eval_perplexity'] = {}
-      stats['wall_time'] = {}
-      with open(stat_file_name, "w") as statfile:
-        statfile.write(json.dumps(stats))
-    else:
-      with open(stat_file_name, "r") as statfile:
-        statjson = statfile.read()
-        stats = json.loads(statjson)
 
     # Create model.
     print("Creating %d layers of %d units." % (FLAGS.num_layers, FLAGS.size))
@@ -257,7 +301,6 @@ def train():
     step_time, loss = 0.0, 0.0
     KL_loss = 0.0
     current_step = model.global_step.eval()
-    previous_losses = []
     step_loss_summaries = []
     step_KL_loss_summaries = []
     overall_start_time = time.time()
@@ -310,12 +353,6 @@ def train():
 
         stats['train_perplexity'][str(current_step)] = perplexity
         stats['train_KL_divergence'][str(current_step)] = KL_loss
-
-        # Decrease learning rate if no improvement was seen over last 3 times.
-        if not FLAGS.adam:
-          if len(previous_losses) > 2 and loss > max(previous_losses[-3:]):
-            sess.run(model.learning_rate_decay_op)
-        previous_losses.append(loss)
 
         if FLAGS.annealing:
           if current_step >= FLAGS.kl_rate_rise_time and model.kl_rate.eval() < 1:
@@ -527,6 +564,7 @@ def self_test():
 
 def main(_):
   FLAGS.model_dir = FLAGS.train_dir + "/" + FLAGS.ckpt
+
   if FLAGS.self_test:
     self_test()
   elif FLAGS.decode:

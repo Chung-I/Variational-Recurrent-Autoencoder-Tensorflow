@@ -260,8 +260,6 @@ class Seq2SeqModel(object):
     if not forward_only:
       self.gradient_norms = []
       self.updates = []
-      if not optimizer:
-        optimizer = tf.train.GradientDescentOptimizer(self.learning_rate)
       for b in xrange(len(buckets)):
         if probabilistic:
           if annealing:
