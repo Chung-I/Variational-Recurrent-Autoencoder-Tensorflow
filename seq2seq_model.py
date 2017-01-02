@@ -59,6 +59,7 @@ class Seq2SeqModel(object):
                latent_splits=8,
                Lambda=2,
                annealing=False,
+               lower_bound_KL=True,
                kl_rate_rise_time=None,
                kl_rate_rise_factor=None,
                use_lstm=False,
@@ -226,7 +227,7 @@ class Seq2SeqModel(object):
                for i in xrange(len(self.decoder_inputs) - 1)]
 
 
-    if annealing:
+    if annealing and not lower_bound_KL:
       kl_f = seq2seq.KL_divergence
     else:
       kl_f = lower_bounded_kl_f

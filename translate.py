@@ -62,7 +62,7 @@ tf.app.flags.DEFINE_integer("batch_size", 64,
                             "Batch size to use during training.")
 tf.app.flags.DEFINE_integer("size", 128, "Size of each model layer.")
 tf.app.flags.DEFINE_integer("kl_rate_rise_time", 5000, "when we start to increase our KL rate.")
-tf.app.flags.DEFINE_integer("latent_splits", 8, "kl divergence latent splits.")
+tf.app.flags.DEFINE_integer("latent_splits", 64, "kl divergence latent splits.")
 tf.app.flags.DEFINE_integer("num_layers", 1, "Number of layers in the model.")
 tf.app.flags.DEFINE_integer("latent_dim", 64, "latent dimension.")
 tf.app.flags.DEFINE_integer("en_vocab_size", 10000, "English vocabulary size.")
@@ -74,7 +74,7 @@ tf.app.flags.DEFINE_string("input_file", "input.txt", "input file name.")
 tf.app.flags.DEFINE_string("buckets", "[0,1,2]", "which buckets to use.")
 tf.app.flags.DEFINE_integer("max_train_data_size", 0,
                             "Limit on the size of training data (0: no limit).")
-tf.app.flags.DEFINE_integer("steps_per_checkpoint", 200,
+tf.app.flags.DEFINE_integer("steps_per_checkpoint", 2000,
                             "How many training steps to do per checkpoint.")
 tf.app.flags.DEFINE_integer("num_pts", 3,
                             "Number of points between start point and end point.")
@@ -90,18 +90,18 @@ tf.app.flags.DEFINE_boolean("use_fp16", False,
                             "Train using fp16 instead of fp32.")
 tf.app.flags.DEFINE_boolean("new", True,
                             "Train a new model.")
-tf.app.flags.DEFINE_boolean("dnn_in_between", False,
+tf.app.flags.DEFINE_boolean("dnn_in_between", True,
                             "use dnn layer between encoder and decoder or not.")
-tf.app.flags.DEFINE_boolean("probabilistic", False,
+tf.app.flags.DEFINE_boolean("probabilistic", True,
                             "use probabilistic layer or not.")
 tf.app.flags.DEFINE_boolean("annealing", False,
                             "use kl cost annealing or not.")
-tf.app.flags.DEFINE_boolean("elu", False,
+tf.app.flags.DEFINE_boolean("elu", True,
                             "use elu or not. If False, use relu.")
+tf.app.flags.DEFINE_boolean("lower_bound_KL", True,
+                            "use lower bounded KL divergence or not.")
 tf.app.flags.DEFINE_boolean("interpolate", False,
                             "set to True for interpolating.")
-tf.app.flags.DEFINE_boolean("encode", False,
-                            "set to True for encoding.")
 tf.app.flags.DEFINE_boolean("feed_previous", True,
                             "if True, inputs are feeded with last output.")
 tf.app.flags.DEFINE_boolean("batch_norm", False,
@@ -178,6 +178,7 @@ def create_model(session, forward_only):
       FLAGS.latent_splits,
       FLAGS.Lambda,
       FLAGS.annealing,
+      FLAGS.lower_bound_KL,
       FLAGS.kl_rate_rise_time,
       FLAGS.kl_rate_rise_factor,
       FLAGS.use_lstm,
@@ -213,6 +214,24 @@ def train():
     train_writer = tf.summary.FileWriter(FLAGS.model_dir+ "/train", graph=sess.graph)
     dev_writer = tf.summary.FileWriter(FLAGS.model_dir + "/test", graph=sess.graph)
 
+    if FLAGS.new:
+      if os.path.exists(stat_file_name):
+        print("error: create an already existed statistics file")
+        sys.exit()
+      stats = {}
+      stats['hyperparameters'] = FLAGS.__dict__['__flags']
+      stats['model_name'] = stats['hyperparameters']['ckpt']
+      stats['train_perplexity'] = {}
+      stats['train_KL_divergence'] = {}
+      stats['eval_KL_divergence'] = {}
+      stats['eval_perplexity'] = {}
+      stats['wall_time'] = {}
+      with open(stat_file_name, "w") as statfile:
+        statfile.write(json.dumps(stats))
+    else:
+      with open(stat_file_name, "r") as statfile:
+        statjson = statfile.read()
+        stats = json.loads(statjson)
 
     # Create model.
     print("Creating %d layers of %d units." % (FLAGS.num_layers, FLAGS.size))
@@ -233,24 +252,6 @@ def train():
                            for i in xrange(len(train_bucket_sizes))]
 
     stat_file_name = "stats/" + FLAGS.ckpt + ".json" 
-    if FLAGS.new:
-      if os.path.exists(stat_file_name):
-        print("error: create an already existed statistics file")
-        sys.exit()
-      stats = {}
-      stats['hyperparameters'] = FLAGS.__dict__['__flags']
-      stats['model_name'] = stats['hyperparameters']['ckpt']
-      stats['train_perplexity'] = {}
-      stats['train_KL_divergence'] = {}
-      stats['eval_KL_divergence'] = {}
-      stats['eval_perplexity'] = {}
-      stats['wall_time'] = {}
-      with open(stat_file_name, "w") as statfile:
-        statfile.write(json.dumps(stats))
-    else:
-      with open(stat_file_name, "r") as statfile:
-        statjson = statfile.read()
-        stats = json.loads(statjson)
 
     # This is the training loop.
     step_time, loss = 0.0, 0.0
@@ -531,14 +532,13 @@ def main(_):
   elif FLAGS.decode:
     autoencode()
   elif FLAGS.interpolate:
-    if FLAGS.encode:
-      with tf.Session() as sess:
-        model = create_model(sess, True)
-        with gfile.GFile(FLAGS.input_file, "r") as fs:
-          sentences = fs.readlines()
-        model.batch_size = 1
-        means, logvars = encode(sess, model, sentences)
-        interpolate(sess, model, means, logvars, FLAGS.num_pts)
+    with tf.Session() as sess:
+      model = create_model(sess, True)
+      with gfile.GFile(FLAGS.input_file, "r") as fs:
+        sentences = fs.readlines()
+      model.batch_size = 1
+      means, logvars = encode(sess, model, sentences)
+      interpolate(sess, model, means, logvars, FLAGS.num_pts)
   elif FLAGS.num_samples > 0:
     with tf.Session() as sess:
       model = create_model(sess, True)
