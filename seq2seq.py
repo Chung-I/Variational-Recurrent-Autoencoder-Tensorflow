@@ -1216,11 +1216,15 @@ def embedding_encoder(encoder_inputs,
       scope or "embedding_encoder", dtype=dtype) as scope:
     dtype = scope.dtype
     # Encoder.
-    encoder_cell = rnn_cell.EmbeddingWrapper(
-        cell, embedding_classes=num_encoder_symbols,
-        embedding_size=embedding_size)
+    embedding = variable_scope.get_variable("embedding",
+                                            [num_encoder_symbols, embedding_size])
+    emb_inp = (
+        embedding_ops.embedding_lookup(embedding, i) for i in encoder_inputs)
+    #encoder_cell = rnn_cell.EmbeddingWrapper(
+    #    cell, embedding_classes=num_encoder_symbols,
+     #   embedding_size=embedding_size)
     _, encoder_state = rnn.rnn(
-        encoder_cell, encoder_inputs, dtype=dtype)
+        cell, emb_inp, dtype=dtype)
 
     return encoder_state
 
