@@ -55,7 +55,6 @@ class Seq2SeqModel(object):
                max_gradient_norm,
                batch_size,
                learning_rate,
-               learning_rate_decay_factor,
                latent_splits=8,
                Lambda=2,
                annealing=False,
@@ -90,7 +89,6 @@ class Seq2SeqModel(object):
         the model construction is independent of batch_size, so it can be
         changed after initialization if this is convenient, e.g., for decoding.
       learning_rate: learning rate to start with.
-      learning_rate_decay_factor: decay learning rate by this much when needed.
       use_lstm: if true, we use LSTM cells instead of GRU cells.
       num_samples: number of samples for sampled softmax.
       forward_only: if set, we do not construct the backward pass in the model.
@@ -102,8 +100,6 @@ class Seq2SeqModel(object):
     self.batch_size = batch_size
     self.learning_rate = tf.Variable(
         float(learning_rate), trainable=False, dtype=dtype)
-    self.learning_rate_decay_op = self.learning_rate.assign(
-        self.learning_rate * learning_rate_decay_factor)
 
     if annealing:
       self.kl_rate = tf.Variable(

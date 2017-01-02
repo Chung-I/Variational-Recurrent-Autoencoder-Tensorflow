@@ -52,6 +52,7 @@ from tensorflow.contrib.tensorboard.plugins import projector
 default_args = {}
 default_train_args = {}
 default_model_args = {}
+default_eval_args = {}
 
 default_args['ckpt'] = "translate"
 
@@ -68,8 +69,8 @@ default_model_args['batch_norm'] = False
 default_model_args['use_lstm'] = False
 default_model_args['mean_logvar_split'] = False
 default_model_args['elu'] = True
+default_model_args['buckets'] = "[0, 1, 2]"
 
-default_train_args['buckets'] = "[0, 1, 2]"
 default_train_args['learning_rate'] = 0.001
 default_train_args['kl_rate_rise_factor'] = 2
 default_train_args['max_gradient_norm'] = 5.0
@@ -150,31 +151,6 @@ FLAGS = tf.app.flags.FLAGS
 
 
 
-if FLAGS.new:
-  if os.path.exists(stat_file_name):
-    print("error: create an already existed statistics file")
-    sys.exit()
-  stats = {}
-  stats['hyperparameters'] = FLAGS.__dict__['__flags']
-  stats['model_name'] = stats['hyperparameters']['ckpt']
-  stats['train_perplexity'] = {}
-  stats['train_KL_divergence'] = {}
-  stats['eval_KL_divergence'] = {}
-  stats['eval_perplexity'] = {}
-  stats['wall_time'] = {}
-  with open(stat_file_name, "w") as statfile:
-    statfile.write(json.dumps(stats))
-else:
-  with open(stat_file_name, "r") as statfile:
-    statjson = statfile.read()
-    stats = json.loads(statjson)
-    hparams = stats['hyperparameters']
-    for key, _ in default_model_args.items():
-      FLAGS[key] = hparams[key]
-    samekeys = [k for k in default_train_args if default_train_args[k] == FLAGS[k]]
-    for k in samekeys:
-      FLAGS[key] = hparams[key]
-
 
 # We use a number of buckets and pad to the closest one for efficiency.
 # See seq2seq_model.Seq2SeqModel for details of how they work.
@@ -236,7 +212,6 @@ def create_model(session, forward_only):
       FLAGS.max_gradient_norm,
       FLAGS.batch_size,
       FLAGS.learning_rate,
-      FLAGS.learning_rate_decay_factor,
       FLAGS.latent_splits,
       FLAGS.Lambda,
       FLAGS.annealing,
@@ -263,7 +238,7 @@ def create_model(session, forward_only):
     session.run(tf.global_variables_initializer())
   return model
 
-def train():
+def train(stats):
   """Train a en->fr translation model using WMT data."""
   # Prepare WMT data.
   print("Preparing WMT data in %s" % FLAGS.data_dir)
@@ -277,6 +252,8 @@ def train():
     dev_writer = tf.summary.FileWriter(FLAGS.model_dir + "/test", graph=sess.graph)
 
 
+    stat_file_name = "stats/" + FLAGS.ckpt + ".json" 
+    print(FLAGS.__dict__['__flags'])
     # Create model.
     print("Creating %d layers of %d units." % (FLAGS.num_layers, FLAGS.size))
     model = create_model(sess, False)
@@ -295,7 +272,6 @@ def train():
     train_buckets_scale = [sum(train_bucket_sizes[:i + 1]) / train_total_size
                            for i in xrange(len(train_bucket_sizes))]
 
-    stat_file_name = "stats/" + FLAGS.ckpt + ".json" 
 
     # This is the training loop.
     step_time, loss = 0.0, 0.0
@@ -563,7 +539,33 @@ def self_test():
 
 
 def main(_):
+
   FLAGS.model_dir = FLAGS.train_dir + "/" + FLAGS.ckpt
+  stat_file_name = "stats/" + FLAGS.ckpt + ".json" 
+  if FLAGS.new:
+    if os.path.exists(stat_file_name):
+      print("error: create an already existed statistics file")
+      sys.exit()
+    stats = {}
+    stats['hyperparameters'] = FLAGS.__dict__['__flags']
+    stats['model_name'] = stats['hyperparameters']['ckpt']
+    stats['train_perplexity'] = {}
+    stats['train_KL_divergence'] = {}
+    stats['eval_KL_divergence'] = {}
+    stats['eval_perplexity'] = {}
+    stats['wall_time'] = {}
+    with open(stat_file_name, "w") as statfile:
+      statfile.write(json.dumps(stats))
+  else:
+    with open(stat_file_name, "r") as statfile:
+      statjson = statfile.read()
+      stats = json.loads(statjson)
+      hparams = stats['hyperparameters']
+      for key, _ in default_model_args.items():
+        FLAGS.__dict__['__flags'][key] = hparams.get(key, default_model_args[key])
+      samekeys = [k for k in default_train_args if default_train_args[k] == FLAGS.__dict__['__flags'][k]]
+      for key in samekeys:
+        FLAGS.__dict__['__flags'][key] = hparams.get(key, default_train_args[key])
 
   if FLAGS.self_test:
     self_test()
@@ -586,7 +588,7 @@ def main(_):
       n_sample(sess, model, sentence, FLAGS.num_samples)
     
   else:
-    train()
+    train(stats)
 
 if __name__ == "__main__":
   tf.app.run()
