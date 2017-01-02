@@ -2,14 +2,14 @@ import matplotlib.pyplot as plt
 import json
 import sys
 import numpy as np
-step_size = 200
+step_size = 1000
 
 
 def loss_dict_to_arr(stat_dict, step_size):
   curr_step = step_size
   stat_arr = []
   none_combo = 0
-  while none_combo < 4:
+  while none_combo < 6:
     loss_val = stat_dict.get(str(curr_step))
     stat_arr.append(loss_val)
     if loss_val:
@@ -27,9 +27,10 @@ def mask_and_plot(np_arrs, labels, value_text, title_name, fig_name):
     mask = np.isfinite(np_arr)
     single_plot, = plt.plot(x[mask],np_arr[mask],label=labels[idx])
     plots.append(single_plot)
-  plt.legend(loc='upper left', handles=plots)
+  plt.legend(loc='upper right', handles=plots)
   plt.ylabel(value_text)
   plt.xlabel('step')
+  plt.xlim([0,6000])
   plt.title(title_name)
   plt.savefig(fig_name)
 
