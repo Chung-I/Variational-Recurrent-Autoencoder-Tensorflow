@@ -1311,7 +1311,6 @@ def sequence_loss(logits, targets, weights,
   Raises:
     ValueError: If len(logits) is different from len(targets) or len(weights).
   """
-  pdb.set_trace()
   with ops.name_scope(name, "sequence_loss", logits + targets + weights):
     cost = math_ops.reduce_sum(sequence_loss_by_example(
         logits, targets, weights,

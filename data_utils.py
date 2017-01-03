@@ -22,6 +22,7 @@ import gzip
 import os
 import re
 import tarfile
+import embed_utils
 
 from six.moves import urllib
 
@@ -243,7 +244,8 @@ def data_to_token_ids(data_path, target_path, vocabulary_path,
           tokens_file.write(" ".join([str(tok) for tok in token_ids]) + "\n")
 
 
-def prepare_wmt_data(data_dir, en_vocabulary_size, fr_vocabulary_size, tokenizer=None):
+def prepare_wmt_data(data_dir, en_vocabulary_size, fr_vocabulary_size,
+        load_embeddings=False, tokenizer=None):
   """Get WMT data into data_dir, create vocabularies and tokenize data.
 
   Args:
@@ -273,6 +275,10 @@ def prepare_wmt_data(data_dir, en_vocabulary_size, fr_vocabulary_size, tokenizer
   en_vocab_path = os.path.join(data_dir, "vocab%d.en" % en_vocabulary_size)
   create_vocabulary(fr_vocab_path, train_path + ".fr", fr_vocabulary_size, tokenizer)
   create_vocabulary(en_vocab_path, train_path + ".en", en_vocabulary_size, tokenizer)
+  if load_embeddings:
+    embed_utils.save_embeddings(fr_vocab_path, "embed5000.txt")
+    embed_utils.save_embeddings(en_vocab_path, "embed5000.txt")
+    
 
   # Create token ids for the training data.
   fr_train_ids_path = train_path + (".ids%d.fr" % fr_vocabulary_size)

@@ -23,7 +23,8 @@ def get_vocab_order_embeddings(vocab_path, word2vec_path):
     embed_list = [embed_dict.get(word, [0]*len(embed_dict["\u3002"])) for word in vocab_list]
   return embed_list
 
-embed_list = get_vocab_order_embeddings(sys.argv[1], sys.argv[2])
-embeddings = np.array(embed_list, dtype=np.float32)
-with h5py.File(sys.argv[1] + '.embeddings.h5', 'w') as h5f:
-  h5f.create_dataset('embeddings', data=embeddings)
+def save_embeddings(vocab_path, word2vec_path):
+  embed_list = get_vocab_order_embeddings(vocab_path, word2vec_path)
+  embeddings = np.array(embed_list, dtype=np.float32)
+  with h5py.File(vocab_path + '.embeddings.h5', 'w') as h5f:
+    h5f.create_dataset('embeddings', data=embeddings)

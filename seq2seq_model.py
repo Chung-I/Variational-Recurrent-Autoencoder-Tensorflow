@@ -60,7 +60,6 @@ class Seq2SeqModel(object):
                latent_splits=8,
                Lambda=2,
                word_dropout_keep_prob=1.0,
-               beam_search=False,
                beam_size=2,
                annealing=False,
                lower_bound_KL=True,
@@ -107,6 +106,7 @@ class Seq2SeqModel(object):
     self.latent_dim = latent_dim
     self.buckets = buckets
     self.batch_size = batch_size
+    self.word_dropout_keep_prob = word_dropout_keep_prob
     self.learning_rate = tf.Variable(
         float(learning_rate), trainable=False, dtype=dtype)
 
@@ -120,9 +120,11 @@ class Seq2SeqModel(object):
     self.dec_embedding_placeholder = tf.placeholder(tf.float32, [target_vocab_size, size])
     self.dec_embedding_init_op = self.dec_embedding.assign(self.dec_embedding_placeholder)
 
+    self.replace_input = None
+    replace_input = None
     if word_dropout_keep_prob < 1:
-      replace_input = tf.nn.embedding_lookup(self.dec_embedding,
-        tf.fill([batch_size], data_utils.UNK_ID))
+      self.replace_input = tf.placeholder(tf.int32, shape=[None], name="replace_input")
+      replace_input = tf.nn.embedding_lookup(self.dec_embedding, self.replace_input)
 
     if annealing:
       self.kl_rate = tf.Variable(
@@ -269,7 +271,7 @@ class Seq2SeqModel(object):
       kl_f = seq2seq.KL_divergence
     else:
       kl_f = lower_bounded_kl_f
-    if beam_search:
+    if beam_size > 1:
       decoder = beam_decoder_f
     else:
       decoder = decoder_f
@@ -360,6 +362,8 @@ class Seq2SeqModel(object):
     for l in xrange(decoder_size):
       input_feed[self.decoder_inputs[l].name] = decoder_inputs[l]
       input_feed[self.target_weights[l].name] = target_weights[l]
+    if self.word_dropout_keep_prob < 1:
+      input_feed[self.replace_input.name] = np.full((self.batch_size), data_utils.UNK_ID, dtype=np.int32)
 
     # Since our targets are decoder inputs shifted by one, we need one more.
     last_target = self.decoder_inputs[decoder_size].name

@@ -59,7 +59,7 @@ default_args['ckpt'] = "translate"
 
 default_model_args['size'] = 128
 default_model_args['num_layers'] = 1
-default_model_args['latent_dim'] = 64
+default_model_args['latent_dim'] = 256
 default_model_args['en_vocab_size'] = 6000
 default_model_args['fr_vocab_size'] = 6000
 default_model_args['data_dir'] = "corpus/line_based"
@@ -106,7 +106,7 @@ tf.app.flags.DEFINE_float("max_gradient_norm", 5.0,
                           "Clip gradients to this norm.")
 tf.app.flags.DEFINE_float("word_dropout_keep_prob", 1.0,
                           "probability of decoder feeding previous output instead of UNK.")
-tf.app.flags.DEFINE_integer("batch_size", 64,
+tf.app.flags.DEFINE_integer("batch_size",256,
                             "Batch size to use during training.")
 tf.app.flags.DEFINE_integer("size", 128, "Size of each model layer.")
 tf.app.flags.DEFINE_integer("kl_rate_rise_time", 50000, "when we start to increase our KL rate.")
@@ -119,11 +119,11 @@ tf.app.flags.DEFINE_string("data_dir", "corpus/line_based", "Data directory")
 tf.app.flags.DEFINE_string("train_dir", "models", "Training directory.")
 tf.app.flags.DEFINE_string("ckpt", "translate", "checkpoint file name.")
 tf.app.flags.DEFINE_string("input_file", "input.txt", "input file name.")
-tf.app.flags.DEFINE_string("buckets", "[0,1,2]", "which buckets to use.")
+tf.app.flags.DEFINE_string("buckets", "[0]", "which buckets to use.")
 tf.app.flags.DEFINE_integer("max_train_data_size", 0,
                             "Limit on the size of training data (0: no limit).")
-tf.app.flags.DEFINE_integer("beam_size", 2,
-                            "beam size for beam search.")
+tf.app.flags.DEFINE_integer("beam_size", 1,
+                            "beam size for beam search. Run beam search when larger than 1")
 tf.app.flags.DEFINE_integer("steps_per_checkpoint", 2000,
                             "How many training steps to do per checkpoint.")
 tf.app.flags.DEFINE_integer("num_pts", 3,
@@ -156,8 +156,6 @@ tf.app.flags.DEFINE_boolean("use_lstm", False,
                             "if True, use LSTM.")
 tf.app.flags.DEFINE_boolean("mean_logvar_split", False,
                             "True is deprecated and will soon be removed.")
-tf.app.flags.DEFINE_boolean("beam_search", False,
-                            "use beam search or not.")
 tf.app.flags.DEFINE_boolean("load_embeddings", False,
                             "load pre trained embeddings or not.")
 tf.app.flags.DEFINE_boolean("bidirectional", False,
@@ -231,7 +229,6 @@ def create_model(session, forward_only):
       FLAGS.latent_splits,
       FLAGS.Lambda,
       FLAGS.word_dropout_keep_prob,
-      FLAGS.beam_search,
       FLAGS.beam_size,
       FLAGS.annealing,
       FLAGS.lower_bound_KL,
@@ -264,7 +261,7 @@ def train(stats):
   # Prepare WMT data.
   print("Preparing WMT data in %s" % FLAGS.data_dir)
   en_train, fr_train, en_dev, fr_dev, _, _ = data_utils.prepare_wmt_data(
-      FLAGS.data_dir, FLAGS.en_vocab_size, FLAGS.fr_vocab_size)
+      FLAGS.data_dir, FLAGS.en_vocab_size, FLAGS.fr_vocab_size, FLAGS.load_embeddings)
 
   with tf.Session() as sess:
     if not os.path.exists(FLAGS.model_dir):
