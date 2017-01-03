@@ -1177,6 +1177,7 @@ def embedding_encoder(encoder_inputs,
                       embedding,
                       num_symbols,
                       embedding_size,
+                      bidirectional=False,
                       dtype=None,
                       scope=None):
   """Embedding sequence-to-sequence model with attention.
@@ -1231,7 +1232,12 @@ def embedding_encoder(encoder_inputs,
       embedding = variable_scope.get_variable("embedding",
                                               [num_symbols, embedding_size])
     emb_inp = [embedding_ops.embedding_lookup(embedding, i) for i in encoder_inputs]
-    _, encoder_state = rnn.rnn(
+    if bidirectional:
+      _, output_state_fw, output_state_bw = rnn.bidirectional_rnn(cell, cell, emb_inp,
+              sequence_length=len(emb_inp),dtype=dtype)
+      encoder_state = tf.concat(1, [output_state_fw, output_state_bw])
+    else:
+      _, encoder_state = rnn.rnn(
         cell, emb_inp, dtype=dtype)
 
     return encoder_state
@@ -1489,10 +1495,13 @@ def encoder_to_latent(encoder_state,
                       activation=tf.nn.relu,
                       use_lstm=False,
                       mean_logvar_split=False,
+                      enc_state_bidirectional=False,
                       dtype=None):
   print(activation)
   print("encoder_to_latent") 
   concat_state_size = num_layers * embedding_size
+  if enc_state_bidirectional:
+    concat_state_size *= 2
   if use_lstm:
     concat_state_size *= 2
     if num_layers > 1:

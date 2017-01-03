@@ -60,8 +60,8 @@ default_args['ckpt'] = "translate"
 default_model_args['size'] = 128
 default_model_args['num_layers'] = 1
 default_model_args['latent_dim'] = 64
-default_model_args['en_vocab_size'] = 10000
-default_model_args['fr_vocab_size'] = 10000
+default_model_args['en_vocab_size'] = 6000
+default_model_args['fr_vocab_size'] = 6000
 default_model_args['data_dir'] = "corpus/line_based"
 default_model_args['train_dir'] = "models"
 default_model_args['dnn_in_between'] = True
@@ -72,6 +72,7 @@ default_model_args['elu'] = True
 default_model_args['buckets'] = "[0, 1, 2]"
 default_model_args['beam_search'] = False
 default_model_args['beam_size'] = 2
+default_model_args['bidirectional'] = False
 
 default_train_args['learning_rate'] = 0.001
 default_train_args['kl_rate_rise_factor'] = 2
@@ -112,8 +113,8 @@ tf.app.flags.DEFINE_integer("kl_rate_rise_time", 50000, "when we start to increa
 tf.app.flags.DEFINE_integer("latent_splits", 64, "kl divergence latent splits.")
 tf.app.flags.DEFINE_integer("num_layers", 1, "Number of layers in the model.")
 tf.app.flags.DEFINE_integer("latent_dim", 64, "latent dimension.")
-tf.app.flags.DEFINE_integer("en_vocab_size", 10000, "English vocabulary size.")
-tf.app.flags.DEFINE_integer("fr_vocab_size", 10000, "French vocabulary size.")
+tf.app.flags.DEFINE_integer("en_vocab_size", 6000, "English vocabulary size.")
+tf.app.flags.DEFINE_integer("fr_vocab_size", 6000, "French vocabulary size.")
 tf.app.flags.DEFINE_string("data_dir", "corpus/line_based", "Data directory")
 tf.app.flags.DEFINE_string("train_dir", "models", "Training directory.")
 tf.app.flags.DEFINE_string("ckpt", "translate", "checkpoint file name.")
@@ -159,6 +160,8 @@ tf.app.flags.DEFINE_boolean("beam_search", False,
                             "use beam search or not.")
 tf.app.flags.DEFINE_boolean("load_embeddings", False,
                             "load pre trained embeddings or not.")
+tf.app.flags.DEFINE_boolean("bidirectional", False,
+                            "use bidirectiona RNN for encoder or not.")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -244,6 +247,7 @@ def create_model(session, forward_only):
       batch_norm=FLAGS.batch_norm,
       forward_only=forward_only,
       feed_previous=FLAGS.feed_previous,
+      bidirectional=FLAGS.bidirectional,
       dtype=dtype)
   print(FLAGS.model_dir)
   ckpt = tf.train.get_checkpoint_state(FLAGS.model_dir)

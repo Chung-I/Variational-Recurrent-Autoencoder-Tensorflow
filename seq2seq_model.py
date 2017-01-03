@@ -77,6 +77,7 @@ class Seq2SeqModel(object):
                batch_norm=False,
                forward_only=False,
                feed_previous=True,
+               bidirectional=False,
                dtype=tf.float32):
     """Create the model.
 
@@ -172,6 +173,7 @@ class Seq2SeqModel(object):
           embedding=self.enc_embedding,
           num_symbols=source_vocab_size,
           embedding_size=size,
+          bidirectional=False,
           dtype=dtype)
 
     def decoder_f(encoder_state, decoder_inputs):
@@ -221,6 +223,7 @@ class Seq2SeqModel(object):
                      activation=activation,
                      use_lstm=use_lstm,
                      mean_logvar_split=mean_logvar_split,
+                     enc_state_bidirectional=bidirectional,
                      dtype=dtype)
 
     def sample_f(mean, logvar):
