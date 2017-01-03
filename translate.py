@@ -46,6 +46,7 @@ import tensorflow as tf
 
 import data_utils
 import seq2seq_model
+import h5py
 from tensorflow.python.platform import gfile
 from tensorflow.contrib.tensorboard.plugins import projector
 
@@ -69,6 +70,8 @@ default_model_args['use_lstm'] = False
 default_model_args['mean_logvar_split'] = False
 default_model_args['elu'] = True
 default_model_args['buckets'] = "[0, 1, 2]"
+default_model_args['beam_search'] = False
+default_model_args['beam_size'] = 2
 
 default_train_args['learning_rate'] = 0.001
 default_train_args['kl_rate_rise_factor'] = 2
@@ -83,6 +86,7 @@ default_train_args['probabilistic'] = True
 default_train_args['annealing'] = False
 default_train_args['lower_bound_KL'] = True
 default_train_args['feed_previous'] = True
+default_train_args['word_dropout_keep_prob'] = 1.0
 
 default_eval_args['input_file'] = "input.txt"
 default_eval_args['num_pts'] = 3
@@ -90,6 +94,7 @@ default_eval_args['num_samples'] = 0
 default_eval_args['decode'] = False
 default_eval_args['self_test'] = False
 default_eval_args['interpolate'] = False
+default_eval_args['load_embeddings'] = False
 
 
 tf.app.flags.DEFINE_float("learning_rate", 0.001, "Learning rate.")
@@ -98,6 +103,8 @@ tf.app.flags.DEFINE_float("kl_rate_rise_factor", 0.01,
                           "increase of kl rate per 200 step.")
 tf.app.flags.DEFINE_float("max_gradient_norm", 5.0,
                           "Clip gradients to this norm.")
+tf.app.flags.DEFINE_float("word_dropout_keep_prob", 1.0,
+                          "probability of decoder feeding previous output instead of UNK.")
 tf.app.flags.DEFINE_integer("batch_size", 64,
                             "Batch size to use during training.")
 tf.app.flags.DEFINE_integer("size", 128, "Size of each model layer.")
@@ -114,6 +121,8 @@ tf.app.flags.DEFINE_string("input_file", "input.txt", "input file name.")
 tf.app.flags.DEFINE_string("buckets", "[0,1,2]", "which buckets to use.")
 tf.app.flags.DEFINE_integer("max_train_data_size", 0,
                             "Limit on the size of training data (0: no limit).")
+tf.app.flags.DEFINE_integer("beam_size", 2,
+                            "beam size for beam search.")
 tf.app.flags.DEFINE_integer("steps_per_checkpoint", 2000,
                             "How many training steps to do per checkpoint.")
 tf.app.flags.DEFINE_integer("num_pts", 3,
@@ -146,6 +155,10 @@ tf.app.flags.DEFINE_boolean("use_lstm", False,
                             "if True, use LSTM.")
 tf.app.flags.DEFINE_boolean("mean_logvar_split", False,
                             "True is deprecated and will soon be removed.")
+tf.app.flags.DEFINE_boolean("beam_search", False,
+                            "use beam search or not.")
+tf.app.flags.DEFINE_boolean("load_embeddings", False,
+                            "load pre trained embeddings or not.")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -214,12 +227,16 @@ def create_model(session, forward_only):
       FLAGS.learning_rate,
       FLAGS.latent_splits,
       FLAGS.Lambda,
+      FLAGS.word_dropout_keep_prob,
+      FLAGS.beam_search,
+      FLAGS.beam_size,
       FLAGS.annealing,
       FLAGS.lower_bound_KL,
       FLAGS.kl_rate_rise_time,
       FLAGS.kl_rate_rise_factor,
       FLAGS.use_lstm,
       FLAGS.mean_logvar_split,
+      FLAGS.load_embeddings,
       optimizer=optimizer,
       activation=activation,
       dnn_in_between=FLAGS.dnn_in_between,
@@ -271,7 +288,15 @@ def train(stats):
     # the size if i-th training bucket, as used later.
     train_buckets_scale = [sum(train_bucket_sizes[:i + 1]) / train_total_size
                            for i in xrange(len(train_bucket_sizes))]
-
+    if FLAGS.load_embeddings:
+      with h5py.File(FLAGS.data_dir + "/vocab{0}".format(FLAGS.en_vocab_size) + '.en.embeddings.h5','r') as h5f:
+        enc_embeddings = h5f['embeddings'][:]
+      sess.run(model.enc_embedding_init_op, feed_dict={model.enc_embedding_placeholder: enc_embeddings})
+      del enc_embeddings
+      with h5py.File(FLAGS.data_dir + "/vocab{0}".format(FLAGS.fr_vocab_size) + '.fr.embeddings.h5','r') as h5f:
+        dec_embeddings = h5f['embeddings'][:]
+      sess.run(model.dec_embedding_init_op, feed_dict={model.dec_embedding_placeholder: dec_embeddings})
+      del dec_embeddings
 
     # This is the training loop.
     step_time, loss = 0.0, 0.0

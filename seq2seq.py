@@ -108,8 +108,8 @@ def _extract_argmax_and_embed(embedding, output_projection=None,
   return loop_function
 
 
-def rnn_decoder(decoder_inputs, initial_state, cell, loop_function=None,
-                scope=None):
+def rnn_decoder(decoder_inputs, initial_state, cell, word_dropout_keep_prob=1, replace_inp=None,
+                loop_function=None, scope=None):
   """RNN decoder for the sequence-to-sequence model.
 
   Args:
@@ -139,10 +139,16 @@ def rnn_decoder(decoder_inputs, initial_state, cell, loop_function=None,
     state = initial_state
     outputs = []
     prev = None
+    seq_len = len(decoder_inputs)
+    keep = tf.select(tf.random_uniform([seq_len]) < word_dropout_keep_prob,
+            tf.fill([seq_len], True), tf.fill([seq_len], False))
     for i, inp in enumerate(decoder_inputs):
       if loop_function is not None and prev is not None:
         with variable_scope.variable_scope("loop_function", reuse=True):
-          inp = loop_function(prev, i)
+          if word_dropout_keep_prob < 1:
+              inp = tf.cond(keep[i], lambda: loop_function(prev, i), lambda: replace_inp)
+          else:
+            inp = loop_function(prev, i)
       if i > 0:
         variable_scope.get_variable_scope().reuse_variables()
       output, state = cell(inp, state)
@@ -217,8 +223,11 @@ def tied_rnn_seq2seq(encoder_inputs, decoder_inputs, cell,
 def embedding_rnn_decoder(decoder_inputs,
                           initial_state,
                           cell,
+                          embedding,
                           num_symbols,
                           embedding_size,
+                          word_dropout_keep_prob=1,
+                          replace_input=None,
                           output_projection=None,
                           feed_previous=False,
                           update_embedding_for_previous=True,
@@ -271,14 +280,15 @@ def embedding_rnn_decoder(decoder_inputs,
       proj_biases = ops.convert_to_tensor(output_projection[1], dtype=dtype)
       proj_biases.get_shape().assert_is_compatible_with([num_symbols])
 
-    embedding = variable_scope.get_variable("embedding",
-                                            [num_symbols, embedding_size])
+    if not embedding:
+      embedding = variable_scope.get_variable("embedding",
+                                              [num_symbols, embedding_size])
     loop_function = _extract_argmax_and_embed(
         embedding, output_projection,
         update_embedding_for_previous) if feed_previous else None
-    emb_inp = (
-        embedding_ops.embedding_lookup(embedding, i) for i in decoder_inputs)
-    return rnn_decoder(emb_inp, initial_state, cell,
+    emb_inp = [
+        embedding_ops.embedding_lookup(embedding, i) for i in decoder_inputs]
+    return rnn_decoder(emb_inp, initial_state, cell, word_dropout_keep_prob, replace_input,
                        loop_function=loop_function)
 
 
@@ -1164,7 +1174,8 @@ def embedding_attention_encoder(encoder_inputs,
 
 def embedding_encoder(encoder_inputs,
                       cell,
-                      num_encoder_symbols,
+                      embedding,
+                      num_symbols,
                       embedding_size,
                       dtype=None,
                       scope=None):
@@ -1216,13 +1227,10 @@ def embedding_encoder(encoder_inputs,
       scope or "embedding_encoder", dtype=dtype) as scope:
     dtype = scope.dtype
     # Encoder.
-    embedding = variable_scope.get_variable("embedding",
-                                            [num_encoder_symbols, embedding_size])
-    emb_inp = (
-        embedding_ops.embedding_lookup(embedding, i) for i in encoder_inputs)
-    #encoder_cell = rnn_cell.EmbeddingWrapper(
-    #    cell, embedding_classes=num_encoder_symbols,
-     #   embedding_size=embedding_size)
+    if not embedding:
+      embedding = variable_scope.get_variable("embedding",
+                                              [num_symbols, embedding_size])
+    emb_inp = [embedding_ops.embedding_lookup(embedding, i) for i in encoder_inputs]
     _, encoder_state = rnn.rnn(
         cell, emb_inp, dtype=dtype)
 
@@ -1297,6 +1305,7 @@ def sequence_loss(logits, targets, weights,
   Raises:
     ValueError: If len(logits) is different from len(targets) or len(weights).
   """
+  pdb.set_trace()
   with ops.name_scope(name, "sequence_loss", logits + targets + weights):
     cost = math_ops.reduce_sum(sequence_loss_by_example(
         logits, targets, weights,

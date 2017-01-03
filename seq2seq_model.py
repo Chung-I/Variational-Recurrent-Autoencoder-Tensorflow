@@ -29,6 +29,8 @@ import data_utils
 import seq2seq
 import pdb
 from bnlstm import BNLSTMCell
+from tf_beam_decoder import BeamDecoder
+from tensorflow.python.ops import variable_scope
 
 class Seq2SeqModel(object):
   """Sequence-to-sequence model with attention and for multiple buckets.
@@ -57,12 +59,16 @@ class Seq2SeqModel(object):
                learning_rate,
                latent_splits=8,
                Lambda=2,
+               word_dropout_keep_prob=1.0,
+               beam_search=False,
+               beam_size=2,
                annealing=False,
                lower_bound_KL=True,
                kl_rate_rise_time=None,
                kl_rate_rise_factor=None,
                use_lstm=False,
                mean_logvar_split=False,
+               load_embeddings=False,
                num_samples=512,
                optimizer=None,
                activation=tf.nn.relu,
@@ -102,6 +108,20 @@ class Seq2SeqModel(object):
     self.batch_size = batch_size
     self.learning_rate = tf.Variable(
         float(learning_rate), trainable=False, dtype=dtype)
+
+    self.enc_embedding = tf.Variable(tf.constant(0.0, shape=[source_vocab_size, size]),
+                            name="enc_embedding")
+    self.enc_embedding_placeholder = tf.placeholder(tf.float32, [source_vocab_size, size])
+    self.enc_embedding_init_op = self.enc_embedding.assign(self.enc_embedding_placeholder)
+
+    self.dec_embedding = tf.Variable(tf.constant(0.0, shape=[target_vocab_size, size]),
+                            name="dec_embedding")
+    self.dec_embedding_placeholder = tf.placeholder(tf.float32, [target_vocab_size, size])
+    self.dec_embedding_init_op = self.dec_embedding.assign(self.dec_embedding_placeholder)
+
+    if word_dropout_keep_prob < 1:
+      replace_input = tf.nn.embedding_lookup(self.dec_embedding,
+        tf.fill([batch_size], data_utils.UNK_ID))
 
     if annealing:
       self.kl_rate = tf.Variable(
@@ -149,19 +169,36 @@ class Seq2SeqModel(object):
       return seq2seq.embedding_encoder(
           encoder_inputs,
           cell,
-          num_encoder_symbols=source_vocab_size,
+          embedding=self.enc_embedding,
+          num_symbols=source_vocab_size,
           embedding_size=size,
           dtype=dtype)
 
-    def decoder_f(encoder_state, decoder_inputs, do_decode):
+    def decoder_f(encoder_state, decoder_inputs):
       return seq2seq.embedding_rnn_decoder(
           decoder_inputs,
           encoder_state,
           cell,
+          embedding=self.dec_embedding,
+          word_dropout_keep_prob=word_dropout_keep_prob,
+          replace_input=replace_input,
           num_symbols=target_vocab_size,
           embedding_size=size,
+          
           output_projection=output_projection,
-          feed_previous=do_decode)
+          feed_previous=True)
+
+    def beam_decoder_f(encoder_state, decoder_inputs):
+      beam_decoder = BeamDecoder(target_vocab_size, beam_size=beam_size, max_len=len(decoder_inputs))
+      with variable_scope.variable_scope("beam_decoder_f") as scope:
+        decoder_inputs = [tf.nn.embedding_lookup(self.dec_embedding, i) for i in decoder_inputs]
+        _, final_state = seq2seq.rnn_decoder(
+            [beam_decoder.wrap_input(decoder_input) for decoder_input in decoder_inputs],
+            beam_decoder.wrap_state(encoder_state), beam_decoder.wrap_cell(cell),
+            loop_function = lambda prev_symbol, i: tf.nn.embedding_lookup(self.dec_embedding, prev_symbol))
+        best_dense = beam_decoder.unwrap_output_dense(final_state) # Dense tensor output, right-aligned
+        best_sparse = beam_decoder.unwrap_output_sparse(final_state) # Output, this time as a sparse tensor
+      return best_dense, final_state
 
     def latent_dec_f(latent_vector):
       return seq2seq.latent_to_decoder(latent_vector,
@@ -229,6 +266,10 @@ class Seq2SeqModel(object):
       kl_f = seq2seq.KL_divergence
     else:
       kl_f = lower_bounded_kl_f
+    if beam_search:
+      decoder = beam_decoder_f
+    else:
+      decoder = decoder_f
     # Training outputs and losses.
     if dnn_in_between:
       self.means, self.logvars = seq2seq.variational_encoder_with_buckets(
@@ -236,14 +277,13 @@ class Seq2SeqModel(object):
           softmax_loss_function=softmax_loss_function)
       self.outputs, self.losses, self.KL_divergences = seq2seq.variational_decoder_with_buckets(
           self.means, self.logvars, self.decoder_inputs, targets,
-          self.target_weights, buckets,
-          lambda x, y: decoder_f(x, y, True),
+          self.target_weights, buckets, decoder,
           latent_dec_f, kl_f, sample_f,
           softmax_loss_function=softmax_loss_function)
     else:
       self.outputs, self.losses = seq2seq.autoencoder_with_buckets(
           self.encoder_inputs, self.decoder_inputs, targets,
-          self.target_weights, buckets, encoder_f, lambda x, y: decoder_f(x, y, True),
+          self.target_weights, buckets, encoder_f, decoder,
           softmax_loss_function=softmax_loss_function)
     # If we use output projection, we need to project outputs for decoding.
     if output_projection is not None:

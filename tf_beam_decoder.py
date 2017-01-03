@@ -18,6 +18,7 @@ best_sparse = beam_decoder.unwrap_output_sparse(final_state) # Output, this time
 """
 
 import tensorflow as tf
+import pdb
 
 try:
     from tensorflow.python.util import nest
