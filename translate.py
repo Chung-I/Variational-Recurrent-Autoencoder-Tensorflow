@@ -50,129 +50,39 @@ import h5py
 from tensorflow.python.platform import gfile
 from tensorflow.contrib.tensorboard.plugins import projector
 
-default_args = {}
-default_train_args = {}
-default_model_args = {}
-default_eval_args = {}
-
-default_args['ckpt'] = "translate"
-
-default_model_args['size'] = 128
-default_model_args['num_layers'] = 1
-default_model_args['latent_dim'] = 64
-default_model_args['en_vocab_size'] = 6000
-default_model_args['fr_vocab_size'] = 6000
-default_model_args['data_dir'] = "corpus/line_based"
-default_model_args['train_dir'] = "models"
-default_model_args['dnn_in_between'] = True
-default_model_args['batch_norm'] = False
-default_model_args['use_lstm'] = False
-default_model_args['mean_logvar_split'] = False
-default_model_args['elu'] = True
-default_model_args['buckets'] = "[0]"
-default_model_args['beam_size'] = 2
-default_model_args['bidirectional'] = False
-
-default_train_args['learning_rate'] = 0.001
-default_train_args['kl_rate_rise_factor'] = 0.001
-default_train_args['max_gradient_norm'] = 5.0
-default_train_args['batch_size'] = 256
-default_train_args['kl_rate_rise_time'] = 50000
-default_train_args['Lambda'] = 2
-default_train_args['latent_splits'] = default_model_args['latent_dim']
-default_train_args['max_train_data_size'] = 0
-default_train_args['steps_per_checkpoint'] = 2000
-default_train_args['annealing'] = False
-default_train_args['lower_bound_KL'] = True
-default_train_args['feed_previous'] = True
-default_train_args['word_dropout_keep_prob'] = 1.0
-
-default_eval_args['input_file'] = "input.txt"
-default_eval_args['num_pts'] = 3
-default_eval_args['num_samples'] = 0
-default_eval_args['decode'] = False
-default_eval_args['self_test'] = False
-default_eval_args['interpolate'] = False
-default_eval_args['load_embeddings'] = False
-default_eval_args['Lambda_annealing'] = False
-default_train_args['probabilistic'] = False
-
-
-tf.app.flags.DEFINE_float("learning_rate", 0.001, "Learning rate.")
-tf.app.flags.DEFINE_float("Lambda", 2, "kl divergence threshold.")
-tf.app.flags.DEFINE_float("kl_rate_rise_factor", 0.001,
-                          "increase of kl rate per 200 step.")
-tf.app.flags.DEFINE_float("max_gradient_norm", 5.0,
-                          "Clip gradients to this norm.")
-tf.app.flags.DEFINE_float("word_dropout_keep_prob", 1.0,
-                          "probability of decoder feeding previous output instead of UNK.")
-tf.app.flags.DEFINE_integer("batch_size",256,
-                            "Batch size to use during training.")
-tf.app.flags.DEFINE_integer("size", 128, "Size of each model layer.")
-tf.app.flags.DEFINE_integer("kl_rate_rise_time", 50000, "when we start to increase our KL rate.")
-tf.app.flags.DEFINE_integer("latent_splits", 64, "kl divergence latent splits.")
-tf.app.flags.DEFINE_integer("num_layers", 1, "Number of layers in the model.")
-tf.app.flags.DEFINE_integer("latent_dim", 64, "latent dimension.")
-tf.app.flags.DEFINE_integer("en_vocab_size", 6000, "English vocabulary size.")
-tf.app.flags.DEFINE_integer("fr_vocab_size", 6000, "French vocabulary size.")
-tf.app.flags.DEFINE_string("data_dir", "corpus/line_based", "Data directory")
-tf.app.flags.DEFINE_string("train_dir", "models", "Training directory.")
-tf.app.flags.DEFINE_string("ckpt", "translate", "checkpoint file name.")
-tf.app.flags.DEFINE_string("input_file", "input.txt", "input file name.")
-tf.app.flags.DEFINE_string("buckets", "[0]", "which buckets to use.")
-tf.app.flags.DEFINE_integer("max_train_data_size", 0,
-                            "Limit on the size of training data (0: no limit).")
-tf.app.flags.DEFINE_integer("beam_size", 1,
-                            "beam size for beam search. Run beam search when larger than 1")
-tf.app.flags.DEFINE_integer("steps_per_checkpoint", 2000,
-                            "How many training steps to do per checkpoint.")
-tf.app.flags.DEFINE_integer("num_pts", 3,
-                            "Number of points between start point and end point.")
-tf.app.flags.DEFINE_integer("num_samples", 0,
-                            "Number of points between start point and end point.")
-tf.app.flags.DEFINE_boolean("decode", False,
-                            "Set to True for interactive decoding.")
-tf.app.flags.DEFINE_boolean("self_test", False,
-                            "Run a self-test if this is set to True.")
-tf.app.flags.DEFINE_boolean("new", True,
-                            "Train a new model.")
-tf.app.flags.DEFINE_boolean("dnn_in_between", True,
-                            "use dnn layer between encoder and decoder or not.")
-tf.app.flags.DEFINE_boolean("probabilistic", False,
-                            "use probabilistic layer or not.")
-tf.app.flags.DEFINE_boolean("annealing", False,
-                            "use kl cost annealing or not.")
-tf.app.flags.DEFINE_boolean("elu", True,
-                            "use elu or not. If False, use relu.")
-tf.app.flags.DEFINE_boolean("lower_bound_KL", True,
-                            "use lower bounded KL divergence or not.")
-tf.app.flags.DEFINE_boolean("interpolate", False,
-                            "set to True for interpolating.")
-tf.app.flags.DEFINE_boolean("feed_previous", True,
-                            "if True, inputs are feeded with last output.")
-tf.app.flags.DEFINE_boolean("batch_norm", False,
-                            "if True, use batch normalized LSTM.")
-tf.app.flags.DEFINE_boolean("use_lstm", False,
-                            "if True, use LSTM.")
-tf.app.flags.DEFINE_boolean("mean_logvar_split", False,
-                            "True is deprecated and will soon be removed.")
-tf.app.flags.DEFINE_boolean("load_embeddings", False,
-                            "load pre trained embeddings or not.")
-tf.app.flags.DEFINE_boolean("bidirectional", False,
-                            "use bidirectiona RNN for encoder or not.")
-tf.app.flags.DEFINE_boolean("Lambda_annealing", False,
-                            "use Lambda annealing.")
+tf.app.flags.DEFINE_string("model_dir", "input.txt", "directory of the model.")
+tf.app.flags.DEFINE_boolean("new", True, "whether this is a new model or not.")
+tf.app.flags.DEFINE_string("do", "train", "what to do. accepts train, interpolate, sample, and decode.")
 
 FLAGS = tf.app.flags.FLAGS
 
 
+def maybe_create_statistics(config):
+  stat_file_name = "stats/" + FLAGS.model_dir + ".json" 
+  if FLAGS.new:
+    if os.path.exists(stat_file_name):
+      print("error: create an already existed statistics file")
+      sys.exit()
+    stats = {}
+    stats['hyperparameters'] = config
+    stats['model_name'] = FLAGS.model_dir
+    stats['train_perplexity'] = {}
+    stats['train_KL_divergence'] = {}
+    stats['eval_KL_divergence'] = {}
+    stats['eval_perplexity'] = {}
+    stats['wall_time'] = {}
+    with open(stat_file_name, "w") as statfile:
+      statfile.write(json.dumps(stats))
+  else:
+    with open(stat_file_name, "r") as statfile:
+      statjson = statfile.read()
+      stats = json.loads(statjson)
+      hparams = stats['hyperparameters']
+  return stats
 
 
 # We use a number of buckets and pad to the closest one for efficiency.
 # See seq2seq_model.Seq2SeqModel for details of how they work.
-_buckets = [(8, 10), (11,13), (33, 35), (65, 67)]
-
-_buckets = [_buckets[i] for i in json.loads(FLAGS.buckets)]
 
 
 def read_data(source_path, target_path, max_size=None):
@@ -187,12 +97,12 @@ def read_data(source_path, target_path, max_size=None):
       if 0 or None, data files will be read completely (no limit).
 
   Returns:
-    data_set: a list of length len(_buckets); data_set[n] contains a list of
+    data_set: a list of length len(config._buckets); data_set[n] contains a list of
       (source, target) pairs read from the provided data files that fit
-      into the n-th bucket, i.e., such that len(source) < _buckets[n][0] and
-      len(target) < _buckets[n][1]; source and target are lists of token-ids.
+      into the n-th bucket, i.e., such that len(source) < config._buckets[n][0] and
+      len(target) < config._buckets[n][1]; source and target are lists of token-ids.
   """
-  data_set = [[] for _ in _buckets]
+  data_set = [[] for _ in config._buckets]
   with tf.gfile.GFile(source_path, mode="r") as source_file:
     with tf.gfile.GFile(target_path, mode="r") as target_file:
       source, target = source_file.readline(), target_file.readline()
@@ -205,7 +115,7 @@ def read_data(source_path, target_path, max_size=None):
         source_ids = [int(x) for x in source.split()]
         target_ids = [int(x) for x in target.split()]
         target_ids.append(data_utils.EOS_ID)
-        for bucket_id, (source_size, target_size) in enumerate(_buckets):
+        for bucket_id, (source_size, target_size) in enumerate(config._buckets):
           if len(source_ids) < source_size and len(target_ids) < target_size:
             data_set[bucket_id].append([source_ids, target_ids])
             break
@@ -213,43 +123,42 @@ def read_data(source_path, target_path, max_size=None):
   return data_set
 
 
-def create_model(session, forward_only):
+def create_model(session, config, forward_only):
   """Create translation model and initialize or load parameters in session."""
   dtype = tf.float32
   optimizer = tf.train.AdamOptimizer(FLAGS.learning_rate)
   activation = tf.nn.elu if FLAGS.elu else tf.nn.relu
   model = seq2seq_model.Seq2SeqModel(
-      FLAGS.en_vocab_size,
-      FLAGS.fr_vocab_size,
-      _buckets,
-      FLAGS.size,
-      FLAGS.num_layers,
-      FLAGS.latent_dim,
-      FLAGS.max_gradient_norm,
-      FLAGS.batch_size,
-      FLAGS.learning_rate,
-      FLAGS.latent_splits,
-      FLAGS.Lambda,
-      FLAGS.word_dropout_keep_prob,
-      FLAGS.beam_size,
-      FLAGS.annealing,
-      FLAGS.lower_bound_KL,
-      FLAGS.kl_rate_rise_time,
-      FLAGS.kl_rate_rise_factor,
-      FLAGS.use_lstm,
-      FLAGS.mean_logvar_split,
-      FLAGS.load_embeddings,
-      FLAGS.Lambda_annealing,
+      config.en_vocab_size,
+      config.fr_vocab_size,
+      config._buckets,
+      config.size,
+      config.num_layers,
+      config.latent_dim,
+      config.max_gradient_norm,
+      config.batch_size,
+      config.learning_rate,
+      config.latent_splits,
+      config.Lambda,
+      config.word_dropout_keep_prob,
+      config.beam_size,
+      config.annealing,
+      config.lower_bound_KL,
+      config.kl_rate_rise_time,
+      config.kl_rate_rise_factor,
+      config.use_lstm,
+      config.mean_logvar_split,
+      config.load_embeddings,
+      config.Lambda_annealing,
       optimizer=optimizer,
       activation=activation,
-      dnn_in_between=FLAGS.dnn_in_between,
-      probabilistic=FLAGS.probabilistic,
-      batch_norm=FLAGS.batch_norm,
+      dnn_in_between=config.dnn_in_between,
+      probabilistic=config.probabilistic,
+      batch_norm=config.batch_norm,
       forward_only=forward_only,
-      feed_previous=FLAGS.feed_previous,
-      bidirectional=FLAGS.bidirectional,
+      feed_previous=config.feed_previous,
+      bidirectional=config.bidirectional,
       dtype=dtype)
-  print(FLAGS.model_dir)
   ckpt = tf.train.get_checkpoint_state(FLAGS.model_dir)
   if not FLAGS.new and ckpt and tf.train.checkpoint_exists(ckpt.model_checkpoint_path):
     print("Reading model parameters from %s" % ckpt.model_checkpoint_path)
@@ -259,12 +168,14 @@ def create_model(session, forward_only):
     session.run(tf.global_variables_initializer())
   return model
 
-def train(stats):
+def train(config):
   """Train a en->fr translation model using WMT data."""
   # Prepare WMT data.
-  print("Preparing WMT data in %s" % FLAGS.data_dir)
+  print("Preparing WMT data in %s" % config.data_dir)
   en_train, fr_train, en_dev, fr_dev, _, _ = data_utils.prepare_wmt_data(
-      FLAGS.data_dir, FLAGS.en_vocab_size, FLAGS.fr_vocab_size, FLAGS.load_embeddings)
+      config.data_dir, config.en_vocab_size, config.fr_vocab_size, config.load_embeddings)
+
+  stats = maybe_create_statistics()
 
   with tf.Session() as sess:
     if not os.path.exists(FLAGS.model_dir):
@@ -273,24 +184,23 @@ def train(stats):
     dev_writer = tf.summary.FileWriter(FLAGS.model_dir + "/test", graph=sess.graph)
 
 
-    stat_file_name = "stats/" + FLAGS.ckpt + ".json" 
-    print(FLAGS.__dict__['__flags'])
+    stat_file_name = "stats/" + FLAGS.model_dir + ".json" 
     # Create model.
-    print("Creating %d layers of %d units." % (FLAGS.num_layers, FLAGS.size))
-    model = create_model(sess, False)
+    print("Creating %d layers of %d units." % (config.num_layers, config.size))
+    model = create_model(sess, config, False)
 
     # Read data into buckets and compute their sizes.
     print ("Reading development and training data (limit: %d)."
            % FLAGS.max_train_data_size)
     dev_set = read_data(en_dev, fr_dev)
     train_set = read_data(en_train, fr_train, FLAGS.max_train_data_size)
-    train_bucket_sizes = [len(train_set[b]) for b in xrange(len(_buckets))]
+    train_bucket_sizes = [len(train_set[b]) for b in xrange(len(config._buckets))]
     train_total_size = float(sum(train_bucket_sizes))
 
     # A bucket scale is a list of increasing numbers from 0 to 1 that we'll use
     # to select a bucket. Length of [scale[i], scale[i+1]] is proportional to
     # the size if i-th training bucket, as used later.
-    train_buckets_scale = [sum(train_bucket_sizes[:i + 1]) / train_total_size
+    trainconfig._buckets_scale = [sum(train_bucket_sizes[:i + 1]) / train_total_size
                            for i in xrange(len(train_bucket_sizes))]
     if FLAGS.load_embeddings:
       with h5py.File(FLAGS.data_dir + "/vocab{0}".format(FLAGS.en_vocab_size) + '.en.embeddings.h5','r') as h5f:
@@ -311,10 +221,10 @@ def train(stats):
     overall_start_time = time.time()
     while True:
       # Choose a bucket according to data distribution. We pick a random number
-      # in [0, 1] and use the corresponding interval in train_buckets_scale.
+      # in [0, 1] and use the corresponding interval in trainconfig._buckets_scale.
       random_number_01 = np.random.random_sample()
-      bucket_id = min([i for i in xrange(len(train_buckets_scale))
-                       if train_buckets_scale[i] > random_number_01])
+      bucket_id = min([i for i in xrange(len(trainconfig._buckets_scale))
+                       if trainconfig._buckets_scale[i] > random_number_01])
 
       # Get a batch and make a step.
       start_time = time.time()
@@ -372,7 +282,7 @@ def train(stats):
 
 
         # Save checkpoint and zero timer and loss.
-        checkpoint_path = os.path.join(FLAGS.model_dir, FLAGS.ckpt + ".ckpt")
+        checkpoint_path = os.path.join(FLAGS.model_dir, FLAGS.model_dir + ".ckpt")
         model.saver.save(sess, checkpoint_path, global_step=model.global_step)
         step_time, loss, KL_loss = 0.0, 0.0, 0.0
 
@@ -380,7 +290,7 @@ def train(stats):
         eval_losses = []
         eval_KL_losses = []
         eval_bucket_num = 0
-        for bucket_id in xrange(len(_buckets)):
+        for bucket_id in xrange(len(config._buckets)):
           if len(dev_set[bucket_id]) == 0:
             print("  eval: empty bucket %d" % (bucket_id))
             continue
@@ -414,10 +324,10 @@ def train(stats):
         sys.stdout.flush()
 
 
-def autoencode():
+def autoencode(config):
   with tf.Session() as sess:
     # Create model and load parameters.
-    model = create_model(sess, True)
+    model = create_model(sess, config, True)
     model.batch_size = 1  # We decode one sentence at a time.
 
     # Load vocabularies.
@@ -433,13 +343,13 @@ def autoencode():
     sys.stdout.flush()
     with gfile.GFile(FLAGS.input_file, "r") as fs:
       sentences = fs.readlines()
-    with gfile.GFile(FLAGS.ckpt + ".output.txt", "w") as fo:
+    with gfile.GFile(FLAGS.model_dir + ".output.txt", "w") as fo:
       for i, sentence in  enumerate(sentences):
         # Get token-ids for the input sentence.
         token_ids = data_utils.sentence_to_token_ids(sentence, en_vocab)
         # Which bucket does it belong to?
-        bucket_id = len(_buckets) - 1
-        for i, bucket in enumerate(_buckets):
+        bucket_id = len(config._buckets) - 1
+        for i, bucket in enumerate(config._buckets):
           if bucket[0] >= len(token_ids):
             bucket_id = i
             break
@@ -476,8 +386,8 @@ def encode(sess, model, sentences):
     # Get token-ids for the input sentence.
     token_ids = data_utils.sentence_to_token_ids(sentence, en_vocab)
     # Which bucket does it belong to?
-    bucket_id = len(_buckets) - 1
-    for i, bucket in enumerate(_buckets):
+    bucket_id = len(config._buckets) - 1
+    for i, bucket in enumerate(config._buckets):
       if bucket[0] >= len(token_ids):
         bucket_id = i
         break
@@ -524,8 +434,8 @@ def n_sample(sess, model, sentence, num_sample):
   means = [mean] * num_sample
   zero_logvar = np.zeros(shape=logvar.shape)
   logvars = [zero_logvar] + [logvar] * (num_sample - 1)
-  outputs = decode(sess, model, means, logvars, len(_buckets) - 1)
-  with gfile.GFile(FLAGS.ckpt + ".{0}_sample.txt".format(num_sample), "w") as fo:
+  outputs = decode(sess, model, means, logvars, len(config._buckets) - 1)
+  with gfile.GFile(FLAGS.model_dir + ".{0}_sample.txt".format(num_sample), "w") as fo:
     for output in outputs:
       fo.write(output)
   
@@ -545,8 +455,8 @@ def interpolate(sess, model, means, logvars, num_pts):
   pts = np.array(pts)
   pts = pts.T
   pts = [np.array(pt) for pt in pts.tolist()]
-  bucket_id = len(_buckets) - 1
-  with gfile.GFile(FLAGS.ckpt + ".interpolate.txt", "w") as fo:
+  bucket_id = len(config._buckets) - 1
+  with gfile.GFile(FLAGS.model_dir + ".interpolate.txt", "w") as fo:
     logvars = [np.zeros(shape=pt.shape) for pt in pts]
     outputs = decode(sess, model, pts, logvars, bucket_id)
     for output in outputs:
@@ -575,57 +485,37 @@ def self_test():
 
 
 def main(_):
+  
+  with open(os.path.join(FLAGS.model_dir, "config.json")) as config_file:
+    configs = json.load(config_file)
 
-  FLAGS.model_dir = FLAGS.train_dir + "/" + FLAGS.ckpt
-  stat_file_name = "stats/" + FLAGS.ckpt + ".json" 
-  if FLAGS.new:
-    if os.path.exists(stat_file_name):
-      print("error: create an already existed statistics file")
-      sys.exit()
-    stats = {}
-    stats['hyperparameters'] = FLAGS.__dict__['__flags']
-    stats['model_name'] = stats['hyperparameters']['ckpt']
-    stats['train_perplexity'] = {}
-    stats['train_KL_divergence'] = {}
-    stats['eval_KL_divergence'] = {}
-    stats['eval_perplexity'] = {}
-    stats['wall_time'] = {}
-    with open(stat_file_name, "w") as statfile:
-      statfile.write(json.dumps(stats))
-  else:
-    with open(stat_file_name, "r") as statfile:
-      statjson = statfile.read()
-      stats = json.loads(statjson)
-      hparams = stats['hyperparameters']
-      for key, _ in default_model_args.items():
-        FLAGS.__dict__['__flags'][key] = hparams.get(key, default_model_args[key])
-      samekeys = [k for k in default_train_args if default_train_args[k] == FLAGS.__dict__['__flags'][k]]
-      for key in samekeys:
-        FLAGS.__dict__['__flags'][key] = hparams.get(key, default_train_args[key])
+  behavior = ["train", "interpolate", "decode", "sample"]
+  if FLAGS.do not in behavior:
+    raise ValueError("argument \"do\" must be one of the following: train, interpolate, decode or sample.")
+
+  config = configs[FLAGS.do]
 
   if FLAGS.self_test:
     self_test()
   elif FLAGS.decode:
-    autoencode()
+    autoencode(config)
   elif FLAGS.interpolate:
-    print(FLAGS.__dict__['__flags'])
     with tf.Session() as sess:
-      model = create_model(sess, True)
-      with gfile.GFile(FLAGS.input_file, "r") as fs:
+      model = create_model(sess, config, True)
+      with gfile.GFile(config.input_file, "r") as fs:
         sentences = fs.readlines()
       model.batch_size = 1
       means, logvars = encode(sess, model, sentences)
-      interpolate(sess, model, means, logvars, FLAGS.num_pts)
-  elif FLAGS.num_samples > 0:
+      interpolate(sess, model, means, logvars, config.num_pts)
+  elif FLAGS.sample:
     with tf.Session() as sess:
-      model = create_model(sess, True)
-      with gfile.GFile(FLAGS.input_file, "r") as fs:
+      model = create_model(sess, config, True)
+      with gfile.GFile(config.input_file, "r") as fs:
         sentence = fs.readline()
       model.batch_size = 1
-      n_sample(sess, model, sentence, FLAGS.num_samples)
-    
+      n_sample(sess, model, sentence, config.num_samples)
   else:
-    train(stats)
+    train(config)
 
 if __name__ == "__main__":
   tf.app.run()
