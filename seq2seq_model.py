@@ -68,6 +68,7 @@ class Seq2SeqModel(object):
                use_lstm=False,
                mean_logvar_split=False,
                load_embeddings=False,
+               Lambda_annealing=False,
                num_samples=512,
                optimizer=None,
                activation=tf.nn.relu,
@@ -107,6 +108,12 @@ class Seq2SeqModel(object):
     self.buckets = buckets
     self.batch_size = batch_size
     self.word_dropout_keep_prob = word_dropout_keep_prob
+    self.Lambda = Lambda
+    if Lambda_annealing:
+      self.Lambda = tf.Variable(
+          Lambda, trainable=False, dtype=dtype)
+      self.Lambda_divide_by_two_op = self.Lambda.assign(
+          self.Lambda / 2)
     self.learning_rate = tf.Variable(
         float(learning_rate), trainable=False, dtype=dtype)
 
@@ -126,11 +133,11 @@ class Seq2SeqModel(object):
       self.replace_input = tf.placeholder(tf.int32, shape=[None], name="replace_input")
       replace_input = tf.nn.embedding_lookup(self.dec_embedding, self.replace_input)
 
-    if annealing:
-      self.kl_rate = tf.Variable(
-          0, trainable=False, dtype=dtype)
-      self.kl_rate_rise_op = self.kl_rate.assign(
-          self.kl_rate + kl_rate_rise_factor)
+    self.kl_rate = tf.Variable(
+        0, trainable=False, dtype=dtype)
+    self.kl_rate_rise_op = self.kl_rate.assign(
+        self.kl_rate + kl_rate_rise_factor)
+
 
     self.global_step = tf.Variable(0, trainable=False)
 
@@ -215,7 +222,7 @@ class Seq2SeqModel(object):
 
     def lower_bounded_kl_f(mean, logvar):
       return seq2seq.lower_bounded_KL_divergence(
-        mean, logvar, latent_splits, Lambda)
+        mean, logvar, latent_splits, self.Lambda)
 
     def enc_latent_f(encoder_state):
       return seq2seq.encoder_to_latent(encoder_state,
@@ -308,6 +315,7 @@ class Seq2SeqModel(object):
             annealed_KL_divergence = self.kl_rate * self.KL_divergences[b]
             total_loss = self.losses[b] + annealed_KL_divergence
           else:
+            print("kl_divergence taken into account")
             total_loss = self.losses[b] + self.KL_divergences[b]
         else:
             total_loss = self.losses[b]
@@ -401,6 +409,8 @@ class Seq2SeqModel(object):
     for l in xrange(encoder_size):
       input_feed[self.encoder_inputs[l].name] = encoder_inputs[l]
 
+
+
     output_feed = [self.means, self.logvars]
     means, logvars = session.run(output_feed, input_feed)
 
@@ -411,10 +421,18 @@ class Seq2SeqModel(object):
 
     _, decoder_size = self.buckets[bucket_id]
     # Input feed: means.
-    input_feed = {self.means[bucket_id]: means, self.logvars[bucket_id]: logvars}
+    input_feed = {self.means[bucket_id]: means}
+    if not self.probabilistic:
+      print("not probabilistic")
+      input_feed[self.logvars[bucket_id]] = np.zeros([self.batch_size, self.latent_dim], dtype=np.int32)
+    else:
+      input_feed[self.logvars[bucket_id]] = logvars
+
     for l in xrange(decoder_size):
       input_feed[self.decoder_inputs[l].name] = decoder_inputs[l]
       input_feed[self.target_weights[l].name] = target_weights[l]
+    if self.word_dropout_keep_prob < 1:
+      input_feed[self.replace_input.name] = np.full((self.batch_size), data_utils.UNK_ID, dtype=np.int32)
 
     last_target = self.decoder_inputs[decoder_size].name
     input_feed[last_target] = np.zeros([self.batch_size], dtype=np.int32)

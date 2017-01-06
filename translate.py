@@ -59,7 +59,7 @@ default_args['ckpt'] = "translate"
 
 default_model_args['size'] = 128
 default_model_args['num_layers'] = 1
-default_model_args['latent_dim'] = 256
+default_model_args['latent_dim'] = 64
 default_model_args['en_vocab_size'] = 6000
 default_model_args['fr_vocab_size'] = 6000
 default_model_args['data_dir'] = "corpus/line_based"
@@ -69,21 +69,19 @@ default_model_args['batch_norm'] = False
 default_model_args['use_lstm'] = False
 default_model_args['mean_logvar_split'] = False
 default_model_args['elu'] = True
-default_model_args['buckets'] = "[0, 1, 2]"
-default_model_args['beam_search'] = False
+default_model_args['buckets'] = "[0]"
 default_model_args['beam_size'] = 2
 default_model_args['bidirectional'] = False
 
 default_train_args['learning_rate'] = 0.001
-default_train_args['kl_rate_rise_factor'] = 2
+default_train_args['kl_rate_rise_factor'] = 0.001
 default_train_args['max_gradient_norm'] = 5.0
-default_train_args['batch_size'] = 64
+default_train_args['batch_size'] = 256
 default_train_args['kl_rate_rise_time'] = 50000
 default_train_args['Lambda'] = 2
 default_train_args['latent_splits'] = default_model_args['latent_dim']
 default_train_args['max_train_data_size'] = 0
 default_train_args['steps_per_checkpoint'] = 2000
-default_train_args['probabilistic'] = True
 default_train_args['annealing'] = False
 default_train_args['lower_bound_KL'] = True
 default_train_args['feed_previous'] = True
@@ -96,11 +94,13 @@ default_eval_args['decode'] = False
 default_eval_args['self_test'] = False
 default_eval_args['interpolate'] = False
 default_eval_args['load_embeddings'] = False
+default_eval_args['Lambda_annealing'] = False
+default_train_args['probabilistic'] = False
 
 
 tf.app.flags.DEFINE_float("learning_rate", 0.001, "Learning rate.")
 tf.app.flags.DEFINE_float("Lambda", 2, "kl divergence threshold.")
-tf.app.flags.DEFINE_float("kl_rate_rise_factor", 0.01,
+tf.app.flags.DEFINE_float("kl_rate_rise_factor", 0.001,
                           "increase of kl rate per 200 step.")
 tf.app.flags.DEFINE_float("max_gradient_norm", 5.0,
                           "Clip gradients to this norm.")
@@ -138,7 +138,7 @@ tf.app.flags.DEFINE_boolean("new", True,
                             "Train a new model.")
 tf.app.flags.DEFINE_boolean("dnn_in_between", True,
                             "use dnn layer between encoder and decoder or not.")
-tf.app.flags.DEFINE_boolean("probabilistic", True,
+tf.app.flags.DEFINE_boolean("probabilistic", False,
                             "use probabilistic layer or not.")
 tf.app.flags.DEFINE_boolean("annealing", False,
                             "use kl cost annealing or not.")
@@ -160,6 +160,8 @@ tf.app.flags.DEFINE_boolean("load_embeddings", False,
                             "load pre trained embeddings or not.")
 tf.app.flags.DEFINE_boolean("bidirectional", False,
                             "use bidirectiona RNN for encoder or not.")
+tf.app.flags.DEFINE_boolean("Lambda_annealing", False,
+                            "use Lambda annealing.")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -168,7 +170,7 @@ FLAGS = tf.app.flags.FLAGS
 
 # We use a number of buckets and pad to the closest one for efficiency.
 # See seq2seq_model.Seq2SeqModel for details of how they work.
-_buckets = [(8, 10), (33, 35), (65, 67)]
+_buckets = [(8, 10), (11,13), (33, 35), (65, 67)]
 
 _buckets = [_buckets[i] for i in json.loads(FLAGS.buckets)]
 
@@ -237,6 +239,7 @@ def create_model(session, forward_only):
       FLAGS.use_lstm,
       FLAGS.mean_logvar_split,
       FLAGS.load_embeddings,
+      FLAGS.Lambda_annealing,
       optimizer=optimizer,
       activation=activation,
       dnn_in_between=FLAGS.dnn_in_between,
@@ -340,6 +343,12 @@ def train(stats):
         wall_time = time.time() - overall_start_time
         print("time passed: {0}".format(wall_time))
         stats['wall_time'][str(current_step)] = wall_time
+        if FLAGS.Lambda_annealing:
+          if perplexity < 1.05:
+            model.probabilistic = True
+            if model.Lambda.eval() > 16:
+              sess.run(model.Lambda_divide_by_two_op)
+          print("lambda: {0}".format(model.Lambda.eval()))
 
         # Add perplexity, KL divergence to summary and stats.
         perp_summary = tf.Summary(value=[tf.Summary.Value(tag="train perplexity", simple_value=perplexity)])
@@ -358,6 +367,7 @@ def train(stats):
 
         if FLAGS.annealing:
           if current_step >= FLAGS.kl_rate_rise_time and model.kl_rate.eval() < 1:
+            print("current kl rate: {0}".format(model.kl_rate.eval()))
             sess.run(model.kl_rate_rise_op)
 
 
@@ -598,6 +608,7 @@ def main(_):
   elif FLAGS.decode:
     autoencode()
   elif FLAGS.interpolate:
+    print(FLAGS.__dict__['__flags'])
     with tf.Session() as sess:
       model = create_model(sess, True)
       with gfile.GFile(FLAGS.input_file, "r") as fs:
