@@ -1324,6 +1324,7 @@ def sequence_loss(logits, targets, weights,
 
 
 def lower_bounded_KL_divergence(means, logvars, M, Lambda):
+  pdb.set_trace()
   print("latent splits: {0}, Lambda: {1}".format(M, Lambda))
   splitted_means = tf.split(1, M, means)
   splitted_logvars = tf.split(1, M, logvars)
