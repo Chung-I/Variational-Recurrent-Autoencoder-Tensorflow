@@ -1331,7 +1331,7 @@ def lower_bounded_KL_divergence(means, logvars, M, Lambda):
   def kl_f(mean,logvar):
     return -tf.reduce_sum(0.5 * (2 * logvar - tf.square(mean) - tf.exp(2 * logvar) + 1.0), 1)
 
-  return math_ops.add_n([tf.maximum(kl_f(mean, logvar), Lambda)  for (mean, logvar) in zip(splitted_means, splitted_logvars)])
+  return math_ops.add_n([tf.maximum(tf.reduce_mean(kl_f(mean, logvar)), Lambda)  for (mean, logvar) in zip(splitted_means, splitted_logvars)])
 
 def KL_divergence(means, logvars):
   return -tf.reduce_sum(0.5 * (2 * logvars - tf.square(means) -
