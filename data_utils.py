@@ -112,7 +112,7 @@ def basic_tokenizer(sentence):
   return [w for w in words if w]
 
 
-def create_vocabulary(vocabulary_path, data_path, max_vocabulary_size,
+def create_vocabulary(vocabulary_path, data_path, max_vocabulary_size, embedding_path,
                       tokenizer=None, normalize_digits=True):
   """Create vocabulary file (if it does not exist yet) from data file.
 
@@ -130,8 +130,9 @@ def create_vocabulary(vocabulary_path, data_path, max_vocabulary_size,
       if None, basic_tokenizer will be used.
     normalize_digits: Boolean; if true, all digits are replaced by 0s.
   """
-  if not gfile.Exists(vocabulary_path):
+  if not gfile.Exists(vocabulary_path) or not gfile.Exists(embedding_path):
     print("Creating vocabulary %s from data %s" % (vocabulary_path, data_path))
+    print("Creating embedding file %s from data %s" % (embedding_path, data_path))
     vocab = {}
     with gfile.GFile(data_path, mode="r") as f:
       counter = 0
@@ -150,8 +151,11 @@ def create_vocabulary(vocabulary_path, data_path, max_vocabulary_size,
       if len(vocab_list) > max_vocabulary_size:
         vocab_list = vocab_list[:max_vocabulary_size]
       with gfile.GFile(vocabulary_path, mode="wb") as vocab_file:
-        for w in vocab_list:
-          vocab_file.write(w + "\n")
+        with gfile.GFile(embedding_path, mode="wb") as embedding_file:
+          embedding_file.write("Name\n")
+          for w in vocab_list:
+            vocab_file.write(w + "\n")
+            embedding_file.write(w + "\n")
 
 
 def initialize_vocabulary(vocabulary_path):
@@ -273,8 +277,12 @@ def prepare_wmt_data(data_dir, en_vocabulary_size, fr_vocabulary_size,
   # Create vocabularies of the appropriate sizes.
   fr_vocab_path = os.path.join(data_dir, "vocab%d.fr" % fr_vocabulary_size)
   en_vocab_path = os.path.join(data_dir, "vocab%d.en" % en_vocabulary_size)
-  create_vocabulary(fr_vocab_path, train_path + ".fr", fr_vocabulary_size, tokenizer)
-  create_vocabulary(en_vocab_path, train_path + ".en", en_vocabulary_size, tokenizer)
+  create_vocabulary(fr_vocab_path, train_path + ".fr", fr_vocabulary_size,
+          os.path.join(data_dir, "dec_embedding{0}.tsv".format(fr_vocabulary_size)),
+          tokenizer)
+  create_vocabulary(en_vocab_path, train_path + ".en", en_vocabulary_size,
+          os.path.join(data_dir, "enc_embedding{0}.tsv".format(en_vocabulary_size)),
+          tokenizer)
   if load_embeddings:
     embed_utils.save_embeddings(fr_vocab_path, "embed5000.txt")
     embed_utils.save_embeddings(en_vocab_path, "embed5000.txt")

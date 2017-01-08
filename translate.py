@@ -127,7 +127,7 @@ def create_model(session, config, forward_only):
   dtype = tf.float32
   optimizer = tf.train.AdamOptimizer(config.learning_rate)
   activation = tf.nn.elu if config.elu else tf.nn.relu
-  weight_initializer = tf.orthogonal_initializer if config.orthogonal_initializer else None
+  weight_initializer = tf.orthogonal_initializer if config.orthogonal_initializer else tf.uniform_unit_scaling_initializer
   bias_initializer = tf.zeros_initializer
   model = seq2seq_model.Seq2SeqModel(
       config.en_vocab_size,
@@ -208,7 +208,7 @@ def train(config, encode_decode_config, interp_config):
     # A bucket scale is a list of increasing numbers from 0 to 1 that we'll use
     # to select a bucket. Length of [scale[i], scale[i+1]] is proportional to
     # the size if i-th training bucket, as used later.
-    trainbuckets_scale = [sum(train_bucket_sizes[:i + 1]) / train_total_size
+    train_buckets_scale = [sum(train_bucket_sizes[:i + 1]) / train_total_size
                            for i in xrange(len(train_bucket_sizes))]
     if config.load_embeddings:
       with h5py.File(config.data_dir + "/vocab{0}".format(config.en_vocab_size) + '.en.embeddings.h5','r') as h5f:
@@ -220,6 +220,17 @@ def train(config, encode_decode_config, interp_config):
       sess.run(model.dec_embedding_init_op, feed_dict={model.dec_embedding_placeholder: dec_embeddings})
       del dec_embeddings
 
+    projector_config = projector.ProjectorConfig()
+    vis_enc_embedding = projector_config.embeddings.add()
+    vis_dec_embedding = projector_config.embeddings.add()
+    vis_enc_embedding.tensor_name = model.enc_embedding.name
+    vis_dec_embedding.tensor_name = model.dec_embedding.name
+    vis_enc_embedding.metadata_path = os.path.join(config.data_dir,
+            'enc_embedding{0}.tsv'.format(config.en_vocab_size))
+    vis_dec_embedding.metadata_path = os.path.join(config.data_dir,
+            'dec_embedding{0}.tsv'.format(config.fr_vocab_size))
+    projector.visualize_embeddings(train_writer, projector_config)
+
     # This is the training loop.
     step_time, loss = 0.0, 0.0
     KL_loss = 0.0
@@ -229,10 +240,10 @@ def train(config, encode_decode_config, interp_config):
     overall_start_time = time.time()
     while True:
       # Choose a bucket according to data distribution. We pick a random number
-      # in [0, 1] and use the corresponding interval in trainbuckets_scale.
+      # in [0, 1] and use the corresponding interval in train_buckets_scale.
       random_number_01 = np.random.random_sample()
-      bucket_id = min([i for i in xrange(len(trainbuckets_scale))
-                       if trainbuckets_scale[i] > random_number_01])
+      bucket_id = min([i for i in xrange(len(train_buckets_scale))
+                       if train_buckets_scale[i] > random_number_01])
 
       # Get a batch and make a step.
       start_time = time.time()
@@ -279,6 +290,7 @@ def train(config, encode_decode_config, interp_config):
         for i, summary in enumerate(step_KL_loss_summaries):
           train_writer.add_summary(summary, current_step - 200 + i)
         step_KL_loss_summaries = []
+
 
         stats['train_perplexity'][str(current_step)] = perplexity
         stats['train_KL_divergence'][str(current_step)] = KL_loss
