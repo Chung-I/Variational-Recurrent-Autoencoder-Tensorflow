@@ -78,6 +78,8 @@ class Seq2SeqModel(object):
                forward_only=False,
                feed_previous=True,
                bidirectional=False,
+               weight_initializer=None,
+               bias_initializer=None,
                dtype=tf.float32):
     """Create the model.
 
@@ -109,6 +111,7 @@ class Seq2SeqModel(object):
     self.batch_size = batch_size
     self.word_dropout_keep_prob = word_dropout_keep_prob
     self.Lambda = Lambda
+    feed_previous = feed_previous or forward_only
     if Lambda_annealing:
       self.Lambda = tf.Variable(
           Lambda, trainable=False, dtype=dtype)
@@ -117,13 +120,11 @@ class Seq2SeqModel(object):
     self.learning_rate = tf.Variable(
         float(learning_rate), trainable=False, dtype=dtype)
 
-    self.enc_embedding = tf.Variable(tf.constant(0.0, shape=[source_vocab_size, size]),
-                            name="enc_embedding")
+    self.enc_embedding = tf.get_variable("enc_embedding", [source_vocab_size, size], dtype=dtype, initializer=weight_initializer())
     self.enc_embedding_placeholder = tf.placeholder(tf.float32, [source_vocab_size, size])
     self.enc_embedding_init_op = self.enc_embedding.assign(self.enc_embedding_placeholder)
 
-    self.dec_embedding = tf.Variable(tf.constant(0.0, shape=[target_vocab_size, size]),
-                            name="dec_embedding")
+    self.dec_embedding = tf.get_variable("dec_embedding", [target_vocab_size, size], dtype=dtype, initializer=weight_initializer())
     self.dec_embedding_placeholder = tf.placeholder(tf.float32, [target_vocab_size, size])
     self.dec_embedding_init_op = self.dec_embedding.assign(self.dec_embedding_placeholder)
 
@@ -146,9 +147,9 @@ class Seq2SeqModel(object):
     softmax_loss_function = None
     # Sampled softmax only makes sense if we sample less than vocabulary size.
     if num_samples > 0 and num_samples < self.target_vocab_size:
-      w_t = tf.get_variable("proj_w", [self.target_vocab_size, size], dtype=dtype)
+      w_t = tf.get_variable("proj_w", [self.target_vocab_size, size], dtype=dtype, initializer=weight_initializer())
       w = tf.transpose(w_t)
-      b = tf.get_variable("proj_b", [self.target_vocab_size], dtype=dtype)
+      b = tf.get_variable("proj_b", [self.target_vocab_size], dtype=dtype, initializer=bias_initializer)
       output_projection = (w, b)
 
       def sampled_loss(inputs, labels):
@@ -183,6 +184,7 @@ class Seq2SeqModel(object):
           num_symbols=source_vocab_size,
           embedding_size=size,
           bidirectional=False,
+          weight_initializer=weight_initializer,
           dtype=dtype)
 
     def decoder_f(encoder_state, decoder_inputs):
@@ -195,9 +197,9 @@ class Seq2SeqModel(object):
           replace_input=replace_input,
           num_symbols=target_vocab_size,
           embedding_size=size,
-          
           output_projection=output_projection,
-          feed_previous=True)
+          feed_previous=feed_previous,
+          weight_initializer=weight_initializer)
 
     def beam_decoder_f(encoder_state, decoder_inputs):
       beam_decoder = BeamDecoder(target_vocab_size, beam_size=beam_size, max_len=len(decoder_inputs))
@@ -423,7 +425,6 @@ class Seq2SeqModel(object):
     # Input feed: means.
     input_feed = {self.means[bucket_id]: means}
     if not self.probabilistic:
-      print("not probabilistic")
       input_feed[self.logvars[bucket_id]] = np.zeros([self.batch_size, self.latent_dim], dtype=np.int32)
     else:
       input_feed[self.logvars[bucket_id]] = logvars

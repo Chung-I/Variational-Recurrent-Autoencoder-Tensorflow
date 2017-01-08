@@ -38,7 +38,6 @@ import sys
 import time
 import logging
 import json
-import pdb
 
 import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
@@ -128,6 +127,8 @@ def create_model(session, config, forward_only):
   dtype = tf.float32
   optimizer = tf.train.AdamOptimizer(config.learning_rate)
   activation = tf.nn.elu if config.elu else tf.nn.relu
+  weight_initializer = tf.orthogonal_initializer if config.orthogonal_initializer else None
+  bias_initializer = tf.zeros_initializer
   model = seq2seq_model.Seq2SeqModel(
       config.en_vocab_size,
       config.fr_vocab_size,
@@ -158,6 +159,8 @@ def create_model(session, config, forward_only):
       forward_only=forward_only,
       feed_previous=config.feed_previous,
       bidirectional=config.bidirectional,
+      weight_initializer=weight_initializer,
+      bias_initializer=bias_initializer,
       dtype=dtype)
   ckpt = tf.train.get_checkpoint_state(FLAGS.model_dir)
   if not FLAGS.new and ckpt and tf.train.checkpoint_exists(ckpt.model_checkpoint_path):

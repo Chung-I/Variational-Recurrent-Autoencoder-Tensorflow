@@ -231,6 +231,7 @@ def embedding_rnn_decoder(decoder_inputs,
                           output_projection=None,
                           feed_previous=False,
                           update_embedding_for_previous=True,
+                          weight_initializer=None,
                           scope=None):
   """RNN decoder with embedding and a pure-decoding option.
 
@@ -272,6 +273,7 @@ def embedding_rnn_decoder(decoder_inputs,
   Raises:
     ValueError: When output_projection has the wrong shape.
   """
+  print("feed_previous: {0}".format(feed_previous))
   with variable_scope.variable_scope(scope or "embedding_rnn_decoder") as scope:
     if output_projection is not None:
       dtype = scope.dtype
@@ -281,8 +283,8 @@ def embedding_rnn_decoder(decoder_inputs,
       proj_biases.get_shape().assert_is_compatible_with([num_symbols])
 
     if not embedding:
-      embedding = variable_scope.get_variable("embedding",
-                                              [num_symbols, embedding_size])
+      embedding = variable_scope.get_variable("embedding", [num_symbols, embedding_size],
+              initializer=weight_initializer())
     loop_function = _extract_argmax_and_embed(
         embedding, output_projection,
         update_embedding_for_previous) if feed_previous else None
@@ -1179,6 +1181,7 @@ def embedding_encoder(encoder_inputs,
                       embedding_size,
                       bidirectional=False,
                       dtype=None,
+                      weight_initializer=None,
                       scope=None):
   """Embedding sequence-to-sequence model with attention.
 
@@ -1229,8 +1232,8 @@ def embedding_encoder(encoder_inputs,
     dtype = scope.dtype
     # Encoder.
     if not embedding:
-      embedding = variable_scope.get_variable("embedding",
-                                              [num_symbols, embedding_size])
+      embedding = variable_scope.get_variable("embedding", [num_symbols, embedding_size],
+              initializer=weight_initializer())
     emb_inp = [embedding_ops.embedding_lookup(embedding, i) for i in encoder_inputs]
     if bidirectional:
       _, output_state_fw, output_state_bw = rnn.bidirectional_rnn(cell, cell, emb_inp,
@@ -1324,7 +1327,6 @@ def sequence_loss(logits, targets, weights,
 
 
 def lower_bounded_KL_divergence(means, logvars, M, Lambda):
-  pdb.set_trace()
   print("latent splits: {0}, Lambda: {1}".format(M, Lambda))
   splitted_means = tf.split(1, M, means)
   splitted_logvars = tf.split(1, M, logvars)
