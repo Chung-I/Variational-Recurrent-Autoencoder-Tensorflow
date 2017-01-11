@@ -1331,13 +1331,13 @@ def lower_bounded_KL_divergence(means, logvars, M, Lambda):
   splitted_means = tf.split(1, M, means)
   splitted_logvars = tf.split(1, M, logvars)
   def kl_f(mean,logvar):
-    return -tf.reduce_sum(0.5 * (2 * logvar - tf.square(mean) - tf.exp(2 * logvar) + 1.0), 1)
+    return -0.5 * tf.reduce_sum((logvar - tf.square(mean) - tf.exp(logvar) + 1.0), 1)
 
   return math_ops.add_n([tf.maximum(tf.reduce_mean(kl_f(mean, logvar)), Lambda)  for (mean, logvar) in zip(splitted_means, splitted_logvars)])
 
 def KL_divergence(means, logvars):
-  return -tf.reduce_sum(0.5 * (2 * logvars - tf.square(means) -
-    tf.exp(2 * logvars) + 1.0), 1)
+  return -0.5 * tf.reduce_sum((logvars - tf.square(means) -
+    tf.exp(logvars) + 1.0), 1)
 
 
 def model_with_buckets(encoder_inputs, decoder_inputs, targets, weights,
