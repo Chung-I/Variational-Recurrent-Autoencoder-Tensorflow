@@ -184,8 +184,6 @@ def train(config, encode_decode_config, interp_config):
   with tf.Session() as sess:
     if not os.path.exists(FLAGS.model_dir):
       os.makedirs(FLAGS.model_dir)
-    train_writer = tf.summary.FileWriter(FLAGS.model_dir+ "/train", graph=sess.graph)
-    dev_writer = tf.summary.FileWriter(FLAGS.model_dir + "/test", graph=sess.graph)
 
 
     stat_file_name = "stats/" + FLAGS.model_name + ".json" 
@@ -193,13 +191,13 @@ def train(config, encode_decode_config, interp_config):
     print("Creating %d layers of %d units." % (config.num_layers, config.size))
     model = create_model(sess, config, False)
 
+    train_writer = tf.summary.FileWriter(FLAGS.model_dir+ "/train", graph=sess.graph)
+    dev_writer = tf.summary.FileWriter(FLAGS.model_dir + "/test", graph=sess.graph)
+
     # Read data into buckets and compute their sizes.
     print ("Reading development and training data (limit: %d)."
            % config.max_train_data_size)
-    print("en_train: {0}".format(en_train))
-    print("fr_train: {0}".format(fr_train))
-    print("en_dev: {0}".format(en_dev))
-    print("fr_dev: {0}".format(fr_dev))
+
     dev_set = read_data(en_dev, fr_dev, config)
     train_set = read_data(en_train, fr_train, config, config.max_train_data_size)
     train_bucket_sizes = [len(train_set[b]) for b in xrange(len(config.buckets))]
@@ -225,10 +223,10 @@ def train(config, encode_decode_config, interp_config):
     vis_dec_embedding = projector_config.embeddings.add()
     vis_enc_embedding.tensor_name = model.enc_embedding.name
     vis_dec_embedding.tensor_name = model.dec_embedding.name
-    vis_enc_embedding.metadata_path = os.path.join(config.data_dir,
-            'enc_embedding{0}.tsv'.format(config.en_vocab_size))
-    vis_dec_embedding.metadata_path = os.path.join(config.data_dir,
-            'dec_embedding{0}.tsv'.format(config.fr_vocab_size))
+    vis_enc_embedding.metadata_path = os.path.join("/data/home/iLikeNLP/zh_translate/",
+            config.data_dir, 'enc_embedding{0}.tsv'.format(config.en_vocab_size))
+    vis_dec_embedding.metadata_path = os.path.join("/data/home/iLikeNLP/zh_translate/",
+            config.data_dir, 'dec_embedding{0}.tsv'.format(config.fr_vocab_size))
     projector.visualize_embeddings(train_writer, projector_config)
 
     # This is the training loop.
@@ -520,12 +518,19 @@ def main(_):
   interp_config = Struct(**configs["interpolate"])
   encode_decode_config = Struct(**configs["encode_decode"])
   if FLAGS.do == "encode_decode":
-    encode_decode(config)
-  elif FLAGS.do == "interpolate":
-    outputs = encode_interpolate(config)
-    with gfile.GFile(FLAGS.model_dir + ".interpolate.txt", "w") as interp_file:
+    with tf.Session() as sess:
+      model = create_model(sess, encode_decode_config, True)
+      outputs = encode_decode(sess, model, encode_decode_config)
+    with gfile.GFile(os.path.join(FLAGS.model_dir, "encode_decode.txt"), "w") as enc_dec_f:
       for output in outputs:
-        interp_file.write(output + "\n")
+        enc_dec_f.write(output)
+  elif FLAGS.do == "interpolate":
+    with tf.Session() as sess:
+      model = create_model(sess, interp_config, True)
+      outputs = encode_interpolate(sess, model, interp_config)
+    with gfile.GFile(os.path.join(FLAGS.model_dir, "interpolate.txt"), "w") as interp_f:
+      for output in outputs:
+        interp_f.write(output)
   elif FLAGS.do == "train":
     train(config, encode_decode_config, interp_config)
 

@@ -152,7 +152,6 @@ def create_vocabulary(vocabulary_path, data_path, max_vocabulary_size, embedding
         vocab_list = vocab_list[:max_vocabulary_size]
       with gfile.GFile(vocabulary_path, mode="wb") as vocab_file:
         with gfile.GFile(embedding_path, mode="wb") as embedding_file:
-          embedding_file.write("Name\n")
           for w in vocab_list:
             vocab_file.write(w + "\n")
             embedding_file.write(w + "\n")
