@@ -161,6 +161,7 @@ def create_model(session, config, forward_only):
       bidirectional=config.bidirectional,
       weight_initializer=weight_initializer,
       bias_initializer=bias_initializer,
+      iaf=config.iaf,
       dtype=dtype)
   ckpt = tf.train.get_checkpoint_state(FLAGS.model_dir)
   if not FLAGS.new and ckpt and tf.train.checkpoint_exists(ckpt.model_checkpoint_path):
@@ -501,6 +502,8 @@ def encode_interpolate(sess, model, config):
 class Struct(object):
   def __init__(self, **entries):
     self.__dict__.update(entries)
+    if not self.__dict__.get('iaf'):
+      self.__dict__.update({ "iaf": False })
 
 
 def main(_):

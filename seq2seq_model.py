@@ -80,6 +80,7 @@ class Seq2SeqModel(object):
                bidirectional=False,
                weight_initializer=None,
                bias_initializer=None,
+               iaf=False,
                dtype=tf.float32):
     """Create the model.
 
@@ -226,6 +227,10 @@ class Seq2SeqModel(object):
       return seq2seq.lower_bounded_KL_divergence(
         mean, logvar, latent_splits, self.Lambda)
 
+    def iaf_sample_f(means, logvars):
+      return seq2seq.iaf_sample(
+        means, logvars, latent_dim, self.Lambda, dtype=dtype)
+
     def enc_latent_f(encoder_state):
       return seq2seq.encoder_to_latent(encoder_state,
                      embedding_size=size,
@@ -275,6 +280,8 @@ class Seq2SeqModel(object):
     targets = [self.decoder_inputs[i + 1]
                for i in xrange(len(self.decoder_inputs) - 1)]
 
+    if iaf:
+      sample_f = iaf_sample_f
 
     if annealing and not lower_bound_KL:
       kl_f = seq2seq.KL_divergence
@@ -292,7 +299,7 @@ class Seq2SeqModel(object):
       self.outputs, self.losses, self.KL_divergences = seq2seq.variational_decoder_with_buckets(
           self.means, self.logvars, self.decoder_inputs, targets,
           self.target_weights, buckets, decoder,
-          latent_dec_f, kl_f, sample_f,
+          latent_dec_f, kl_f, sample_f, iaf=False,
           softmax_loss_function=softmax_loss_function)
     else:
       self.outputs, self.losses = seq2seq.autoencoder_with_buckets(
