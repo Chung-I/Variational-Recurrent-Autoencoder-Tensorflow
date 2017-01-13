@@ -75,6 +75,7 @@ from tensorflow.python.ops import variable_scope
 from tensorflow.python.util import nest
 import tensorflow as tf
 import pdb
+from .distributions import DiagonalGaussian
 
 # TODO(ebrevdo): Remove once _linear is fully deprecated.
 linear = rnn_cell._linear  # pylint: disable=protected-access
@@ -1487,8 +1488,27 @@ def sample(mean, logvar, batch_size, latent_dim, dtype=None):
   def atomic_sample_f(mean_logvar):
     return atomic_sample(mean_logvar, latent_dim)
   mean_logvar = tf.concat(1, [mean, logvar])
+
   return tf.map_fn(lambda x: atomic_sample_f(x), mean_logvar)
 
+def iaf_sample(mean, logvar, latent_dim, Lambda, dtype=dtype):
+  prior = DiagonalGaussian(0, 0)
+  posterior = DiagonalGaussian(means[j], logvars[j])
+  z = posterior.sample
+
+  logqs = posterior.logps(z)
+  L = tf.get_variable("inverse_cholesky", [latent_dim, latent_dim])
+  diag_one = tf.ones([latent_dim])
+  tf.matrix_set_diag(L, diag_one)
+  mask = tf.constant(np.tril(np.ones([latent_dim,latent_dim])))
+  L = L * mask
+  latent_vector = tf.matmul(L,z)
+  logps = prior.logps(latent_vector)
+  kl_cost = logqs - logps
+  kl_ave = tf.reduce_mean(kl_cost, [0])
+  kl_ave = tf.reduce_sum(tf.maximum(kl_ave, Lambda))
+
+  return latent_vector, kl_ave
 
 def encoder_to_latent(encoder_state,
                       embedding_size,
@@ -1671,7 +1691,7 @@ def variational_encoder_with_buckets(encoder_inputs, buckets, encoder,
 
 def variational_decoder_with_buckets(means, logvars, decoder_inputs,
                        targets, weights,
-                       buckets, decoder, latent_dec, kl_f, sample,
+                       buckets, decoder, latent_dec, kl_f, sample, iaf=False,
                        softmax_loss_function=None,
                        per_example_loss=False, name=None):
   """Create a sequence-to-sequence model with support for bucketing.
@@ -1692,13 +1712,18 @@ def variational_decoder_with_buckets(means, logvars, decoder_inputs,
     for j, bucket in enumerate(buckets):
       with variable_scope.variable_scope(variable_scope.get_variable_scope(),
                                            reuse=True if j > 0 else None):
-        latent_vector = sample(means[j], logvars[j])
+        if iaf:
+          latent_vector, kl_cost = sample(means[j], logvars[j])
+        else:
+          latent_vector = sample(means[j], logvars[j])
+          kl_cost = kl_f(means[j], logvars[j])
         decoder_initial_state = latent_dec(latent_vector)
+
         bucket_outputs, _ = decoder(decoder_initial_state, decoder_inputs[:bucket[1]])
         outputs.append(bucket_outputs)
         total_size = math_ops.add_n(weights[:bucket[1]])
         total_size += 1e-12 
-        KL_divergences.append(tf.reduce_mean(kl_f(means[j], logvars[j]) / total_size))
+        KL_divergences.append(tf.reduce_mean(kl_cost / total_size))
         if per_example_loss:
           losses.append(sequence_loss_by_example(
               outputs[-1], targets[:bucket[1]], weights[:bucket[1]],
