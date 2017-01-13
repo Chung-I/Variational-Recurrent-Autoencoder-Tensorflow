@@ -10,9 +10,11 @@ serialize_tensorboard.py
 stats
 4.py
 *.jpg
+*.png
 dev.txt.en
 line.dev.txt
 interp.txt
 *interpolate.txt
 *txt
 *swp
+config.json
