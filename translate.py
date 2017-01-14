@@ -49,6 +49,7 @@ import h5py
 from tensorflow.python.platform import gfile
 from tensorflow.contrib.tensorboard.plugins import projector
 from utils.adamax import AdamaxOptimizer
+import utils.prelu
 import pdb
 
 tf.app.flags.DEFINE_string("model_dir", "input.txt", "directory of the model.")
@@ -128,7 +129,16 @@ def create_model(session, config, forward_only):
   """Create translation model and initialize or load parameters in session."""
   dtype = tf.float32
   optimizer = AdamaxOptimizer(config.learning_rate) if config.adamax else tf.train.AdamOptimizer(config.learning_rate)  #adamax currently not supported
-  activation = tf.nn.elu if config.elu else tf.nn.relu
+  if config.elu: #this is deprecated and will soon be removed
+    activation = tf.nn.elu
+  elif config.activation == "elu":
+    activation = tf.nn.elu
+  elif config.activation == "prelu":
+    activation = utils.prelu.prelu
+  elif config.activation == "none":
+    activation = tf.identity
+  else:
+    activation = tf.nn.relu
   weight_initializer = tf.orthogonal_initializer if config.orthogonal_initializer else tf.uniform_unit_scaling_initializer
   bias_initializer = tf.zeros_initializer
   model = seq2seq_model.Seq2SeqModel(
@@ -508,6 +518,8 @@ class Struct(object):
       self.__dict__.update({ "iaf": False })
     if not self.__dict__.get('adamax'):
       self.__dict__.update({ "adamax": False })
+    if not self.__dict__.get('elu'):
+      self.__dict__.update({ "elu": False })
 
 
 def main(_):
