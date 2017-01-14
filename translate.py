@@ -57,6 +57,7 @@ tf.app.flags.DEFINE_string("do", "train", "what to do. accepts train, interpolat
 FLAGS = tf.app.flags.FLAGS
 
 
+
 def maybe_create_statistics(config):
   stat_file_name = "stats/" + FLAGS.model_name + ".json" 
   if FLAGS.new:
@@ -127,6 +128,14 @@ def create_model(session, config, forward_only):
   """Create translation model and initialize or load parameters in session."""
   dtype = tf.float32
   optimizer = AdamaxOptimizer(config.learning_rate) if adamax else tf.train.AdamOptimizer(config.learning_rate) 
+  if config.elu:
+    activation = tf.nn.elu
+  elif config.activation == "elu":
+    activation = tf.nn.elu
+  elif config.activation == "prelu":
+    activation = prelu
+  else:
+    activation = tf.nn.relu
   activation = tf.nn.elu if config.elu else tf.nn.relu
   weight_initializer = tf.orthogonal_initializer if config.orthogonal_initializer else tf.uniform_unit_scaling_initializer
   bias_initializer = tf.zeros_initializer
@@ -503,10 +512,12 @@ def encode_interpolate(sess, model, config):
 class Struct(object):
   def __init__(self, **entries):
     self.__dict__.update(entries)
-    if not self.__dict__.get('iaf'):
+    if not self.__dict__.get("iaf"):
       self.__dict__.update({ "iaf": False })
-    if not self.__dict__.get('adamax'):
+    if not self.__dict__.get("adamax"):
       self.__dict__.update({ "adamax": False })
+    if not self.__dict__.get("relu"):
+      self.__dict__.update({ "relu": False })
 
 
 def main(_):

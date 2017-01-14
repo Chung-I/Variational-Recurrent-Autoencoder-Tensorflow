@@ -82,6 +82,17 @@ from utils.distributions import DiagonalGaussian
 linear = rnn_cell._linear  # pylint: disable=protected-access
 
 
+
+def prelu(_x):
+  with tf.variable_scope("prelu"):
+    alphas = tf.get_variable('alpha', _x.get_shape()[-1],
+      initializer=tf.constant_initializer(0.0),
+      dtype=tf.float32)
+    pos = tf.nn.relu(_x)
+    neg = alphas * (_x - abs(_x)) * 0.5
+    return pos + neg
+
+
 def _extract_argmax_and_embed(embedding, output_projection=None,
                               update_embedding=True):
   """Get a loop_function that extracts the previous symbol and embeds it.
@@ -1546,12 +1557,12 @@ def encoder_to_latent(encoder_state,
         w = tf.get_variable("w",
           [concat_state_size, latent_dim], dtype=dtype)
         b = tf.get_variable("b", [latent_dim], dtype=dtype)
-        logvar = activation(tf.matmul(encoder_state, w) + b)
+        logvar = prelu(tf.matmul(encoder_state, w) + b)
     else:
       w = tf.get_variable("w",[concat_state_size, 2 * latent_dim],
         dtype=dtype)
       b = tf.get_variable("b", [2 * latent_dim], dtype=dtype)
-      mean_logvar = activation(tf.matmul(encoder_state, w) + b)
+      mean_logvar = prelu(tf.matmul(encoder_state, w) + b)
       mean, logvar = tf.split(1, 2, mean_logvar)
     
 
@@ -1574,7 +1585,7 @@ def latent_to_decoder(latent_vector,
     w = tf.get_variable("w",[latent_dim, concat_state_size],
       dtype=dtype)
     b = tf.get_variable("b", [concat_state_size], dtype=dtype)
-    decoder_initial_state = activation(tf.matmul(latent_vector, w) + b)
+    decoder_initial_state = prelu(tf.matmul(latent_vector, w) + b)
   if num_layers > 1:
     decoder_initial_state = tuple(tf.split(1, num_layers, decoder_initial_state))
     if use_lstm:
