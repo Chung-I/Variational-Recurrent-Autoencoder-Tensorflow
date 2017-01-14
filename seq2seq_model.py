@@ -299,7 +299,7 @@ class Seq2SeqModel(object):
       self.outputs, self.losses, self.KL_divergences = seq2seq.variational_decoder_with_buckets(
           self.means, self.logvars, self.decoder_inputs, targets,
           self.target_weights, buckets, decoder,
-          latent_dec_f, kl_f, sample_f, iaf=False,
+          latent_dec_f, kl_f, sample_f, iaf,
           softmax_loss_function=softmax_loss_function)
     else:
       self.outputs, self.losses = seq2seq.autoencoder_with_buckets(

@@ -74,8 +74,9 @@ from tensorflow.python.ops import rnn_cell
 from tensorflow.python.ops import variable_scope
 from tensorflow.python.util import nest
 import tensorflow as tf
+import numpy as np
 import pdb
-from .distributions import DiagonalGaussian
+from utils.distributions import DiagonalGaussian
 
 # TODO(ebrevdo): Remove once _linear is fully deprecated.
 linear = rnn_cell._linear  # pylint: disable=protected-access
@@ -1491,24 +1492,26 @@ def sample(mean, logvar, batch_size, latent_dim, dtype=None):
 
   return tf.map_fn(lambda x: atomic_sample_f(x), mean_logvar)
 
-def iaf_sample(mean, logvar, latent_dim, Lambda, dtype=dtype):
-  prior = DiagonalGaussian(0, 0)
-  posterior = DiagonalGaussian(means[j], logvars[j])
-  z = posterior.sample
+def iaf_sample(means, logvars, latent_dim, Lambda, dtype=None):
+  with tf.variable_scope('iaf'):
+    prior = DiagonalGaussian(tf.zeros_like(means, dtype=dtype),
+            tf.zeros_like(logvars, dtype=dtype))
+    posterior = DiagonalGaussian(means, logvars)
+    z = posterior.sample
 
-  logqs = posterior.logps(z)
-  L = tf.get_variable("inverse_cholesky", [latent_dim, latent_dim])
-  diag_one = tf.ones([latent_dim])
-  tf.matrix_set_diag(L, diag_one)
-  mask = tf.constant(np.tril(np.ones([latent_dim,latent_dim])))
-  L = L * mask
-  latent_vector = tf.matmul(L,z)
-  logps = prior.logps(latent_vector)
-  kl_cost = logqs - logps
-  kl_ave = tf.reduce_mean(kl_cost, [0])
-  kl_ave = tf.reduce_sum(tf.maximum(kl_ave, Lambda))
+    logqs = posterior.logps(z)
+    L = tf.get_variable("inverse_cholesky", [latent_dim, latent_dim], dtype=dtype, initializer=tf.zeros_initializer)
+    diag_one = tf.ones([latent_dim], dtype=dtype)
+    L = tf.matrix_set_diag(L, diag_one)
+    mask = np.tril(np.ones([latent_dim,latent_dim]))
+    L = L * mask
+    latent_vector = tf.matmul(z, L)
+    logps = prior.logps(latent_vector)
+    kl_cost = logps - logqs
+    kl_ave = tf.reduce_mean(kl_cost, [0])
+    kl_ave = tf.reduce_sum(tf.maximum(kl_ave, Lambda))
 
-  return latent_vector, kl_ave
+    return latent_vector, kl_ave
 
 def encoder_to_latent(encoder_state,
                       embedding_size,
