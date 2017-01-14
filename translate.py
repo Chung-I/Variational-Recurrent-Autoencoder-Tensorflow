@@ -358,6 +358,7 @@ def train(config, encode_decode_config, interp_config):
 def encode_decode(sess, model, config):
   model.batch_size = 1  # We decode one sentence at a time.
   model.probabilistic = config.probabilistic
+  beam_size = config.beam_size
 
   # Load vocabularies.
   en_vocab_path = os.path.join(config.data_dir,
@@ -384,19 +385,43 @@ def encode_decode(sess, model, config):
       else:
         logging.warning("Sentence truncated: %s", sentence) 
 
-      # Get a 1-element batch to feed the sentence to the model.
       encoder_inputs, decoder_inputs, target_weights = model.get_batch(
           {bucket_id: [(token_ids, [])]}, bucket_id)
+
+      if beam_size > 1:
+        path, symbol, output_logits = model.step(sess, encoder_inputs, decoder_inputs,
+                target_weights, bucket_id, True, beam_size)
+
+        k = output_logits[0]
+        paths = []
+        for kk in range(beam_size):
+          paths.append([])
+        curr = range(beam_size)
+        num_steps = len(path)
+        for i in range(num_steps-1, -1, -1):
+          for kk in range(beam_size):
+            paths[kk].append(symbol[i][curr[kk]])
+              curr[kk] = path[i][curr[kk]]
+        recos = set()
+        for kk in range(beam_size):
+          output = [int(logit)  for logit in paths[kk][::-1]]
+
+          if EOS_ID in output:
+            output = output[:output.index(EOS_ID)]
+          output = " ".join([rev_fr_vocab[word] for word in output]) + "\n"
+          outputs.append(output)
+
+      else:
       # Get output logits for the sentence.
-      _, _, _, output_logits = model.step(sess, encoder_inputs, decoder_inputs,
-                                       target_weights, bucket_id, True)
-      # This is a greedy decoder - outputs are just argmaxes of output_logits.
-      output = [int(np.argmax(logit, axis=1)) for logit in output_logits]
-      # If there is an EOS symbol in outputs, cut them at that point.
-      if data_utils.EOS_ID in output:
-        output = output[:output.index(data_utils.EOS_ID)]
-      output = " ".join([rev_fr_vocab[word] for word in output]) + "\n"
-      outputs.append(output)
+        _, _, _, output_logits = model.step(sess, encoder_inputs, decoder_inputs,
+                                         target_weights, bucket_id, True)
+        # This is a greedy decoder - outputs are just argmaxes of output_logits.
+        output = [int(np.argmax(logit, axis=1)) for logit in output_logits]
+        # If there is an EOS symbol in outputs, cut them at that point.
+        if data_utils.EOS_ID in output:
+          output = output[:output.index(data_utils.EOS_ID)]
+        output = " ".join([rev_fr_vocab[word] for word in output]) + "\n"
+        outputs.append(output)
   return outputs
 
 

@@ -341,7 +341,7 @@ class Seq2SeqModel(object):
 
   
   def step(self, session, encoder_inputs, decoder_inputs, target_weights,
-           bucket_id, forward_only):
+           bucket_id, forward_only, beam_size=1):
     """Run a step of the model feeding the given inputs.
 
     Args:
@@ -395,7 +395,11 @@ class Seq2SeqModel(object):
                      self.losses[bucket_id],
                      self.KL_divergences[bucket_id]]  # Loss for this batch.
     else:
-      output_feed = [self.losses[bucket_id], self.KL_divergences[bucket_id]]  # Loss for this batch.
+      if beam_size > 1:
+        output_feed = [self.beam_path[bucket_id]]  # Loss for this batch.
+        output_feed.append(self.beam_symbol[bucket_id])
+      else:
+        output_feed = [self.losses[bucket_id], self.KL_divergences[bucket_id]]  # Loss for this batch.
       for l in xrange(decoder_size):  # Output logits.
         output_feed.append(self.outputs[bucket_id][l])
 
@@ -403,6 +407,9 @@ class Seq2SeqModel(object):
     if not forward_only:
       return outputs[1], outputs[2], outputs[3], None  # Gradient norm, loss, KL divergence, no outputs.
     else:
+      if beam_size > 1:
+        return outputs[0], outputs[1], outputs[2:]
+      else:
         return None, outputs[0], outputs[1], outputs[2:]  # no gradient norm, loss, KL divergence, outputs.
 
 

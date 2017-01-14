@@ -30,7 +30,7 @@ def mask_and_plot(np_arrs, labels, value_text, title_name, fig_name):
   plt.legend(loc='upper right', handles=plots)
   plt.ylabel(value_text)
   plt.xlabel('step')
-  plt.xlim([0,300000])
+  plt.xlim([0,600000])
   plt.ylim([0,5])
   plt.title(title_name)
   plt.savefig(fig_name)
