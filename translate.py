@@ -48,7 +48,7 @@ import seq2seq_model
 import h5py
 from tensorflow.python.platform import gfile
 from tensorflow.contrib.tensorboard.plugins import projector
-from utils.adamax impot AdamaxOptimizer
+from utils.adamax import AdamaxOptimizer
 
 tf.app.flags.DEFINE_string("model_dir", "input.txt", "directory of the model.")
 tf.app.flags.DEFINE_boolean("new", True, "whether this is a new model or not.")
@@ -126,7 +126,7 @@ def read_data(source_path, target_path, config, max_size=None):
 def create_model(session, config, forward_only):
   """Create translation model and initialize or load parameters in session."""
   dtype = tf.float32
-  optimizer = AdamaxOptimizer(config.learning_rate) if adamax else tf.train.AdamOptimizer(config.learning_rate) 
+  optimizer = AdamaxOptimizer(config.learning_rate) if config.adamax else tf.train.AdamOptimizer(config.learning_rate)  #adamax currently not supported
   activation = tf.nn.elu if config.elu else tf.nn.relu
   weight_initializer = tf.orthogonal_initializer if config.orthogonal_initializer else tf.uniform_unit_scaling_initializer
   bias_initializer = tf.zeros_initializer

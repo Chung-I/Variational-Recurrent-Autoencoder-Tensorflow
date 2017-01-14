@@ -81,6 +81,7 @@ class Seq2SeqModel(object):
                weight_initializer=None,
                bias_initializer=None,
                iaf=False,
+               adamax=False,
                dtype=tf.float32):
     """Create the model.
 
@@ -316,6 +317,7 @@ class Seq2SeqModel(object):
     # Gradients and SGD update operation for training the model.
     params = tf.trainable_variables()
     if not forward_only:
+      ema = tf.train.ExponentialMovingAverage(decay=0.999)
       self.gradient_norms = []
       self.updates = []
       for b in xrange(len(buckets)):
@@ -332,10 +334,22 @@ class Seq2SeqModel(object):
         clipped_gradients, norm = tf.clip_by_global_norm(gradients,
                                                          max_gradient_norm)
         self.gradient_norms.append(norm)
-        self.updates.append(optimizer.apply_gradients(
-            zip(clipped_gradients, params), global_step=self.global_step))
+        if adamax:
+          with tf.name_scope(None):  # This is needed due to EMA implementation silliness.
+            # keep track of moving average
+            train_op = optimizer.apply_gradients(
+                    zip(clipped_gradients, params), global_step=self.global_step)
+            train_op = tf.group(*[train_op, ema.apply(params)])
+            self.updates.append(train_op)
+        else:
+          self.updates.append(optimizer.apply_gradients(
+              zip(clipped_gradients, params), global_step=self.global_step))
 
-    self.saver = tf.train.Saver(tf.global_variables())
+    if adamax:
+      self.avg_dict = ema.variables_to_restore()
+      self.saver = tf.train.Saver(self.avg_dict)
+    else:
+      self.saver = tf.train.Saver(tf.global_variables())
 
 
 
