@@ -1239,7 +1239,7 @@ def embedding_encoder(encoder_inputs,
     emb_inp = [embedding_ops.embedding_lookup(embedding, i) for i in encoder_inputs]
     if bidirectional:
       _, output_state_fw, output_state_bw = rnn.bidirectional_rnn(cell, cell, emb_inp,
-              sequence_length=len(emb_inp),dtype=dtype)
+              dtype=dtype)
       encoder_state = tf.concat(1, [output_state_fw, output_state_bw])
     else:
       _, encoder_state = rnn.rnn(

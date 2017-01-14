@@ -185,7 +185,7 @@ class Seq2SeqModel(object):
           embedding=self.enc_embedding,
           num_symbols=source_vocab_size,
           embedding_size=size,
-          bidirectional=False,
+          bidirectional=bidirectional,
           weight_initializer=weight_initializer,
           dtype=dtype)
 

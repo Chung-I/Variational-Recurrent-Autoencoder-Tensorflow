@@ -49,6 +49,7 @@ import h5py
 from tensorflow.python.platform import gfile
 from tensorflow.contrib.tensorboard.plugins import projector
 from utils.adamax import AdamaxOptimizer
+import pdb
 
 tf.app.flags.DEFINE_string("model_dir", "input.txt", "directory of the model.")
 tf.app.flags.DEFINE_boolean("new", True, "whether this is a new model or not.")
