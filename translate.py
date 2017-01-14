@@ -48,7 +48,7 @@ import seq2seq_model
 import h5py
 from tensorflow.python.platform import gfile
 from tensorflow.contrib.tensorboard.plugins import projector
-from utils.adamax impot AdamaxOptimizer
+from utils.adamax import AdamaxOptimizer
 
 tf.app.flags.DEFINE_string("model_dir", "input.txt", "directory of the model.")
 tf.app.flags.DEFINE_boolean("new", True, "whether this is a new model or not.")
@@ -56,6 +56,15 @@ tf.app.flags.DEFINE_string("do", "train", "what to do. accepts train, interpolat
 
 FLAGS = tf.app.flags.FLAGS
 
+
+def prelu(_x):
+  with tf.variable_scope("prelu"):
+    alphas = tf.get_variable('alpha', _x.get_shape()[-1],
+      initializer=tf.constant_initializer(0.0),
+      dtype=tf.float32)
+    pos = tf.nn.relu(_x)
+    neg = alphas * (_x - abs(_x)) * 0.5
+    return pos + neg
 
 
 def maybe_create_statistics(config):
@@ -127,7 +136,7 @@ def read_data(source_path, target_path, config, max_size=None):
 def create_model(session, config, forward_only):
   """Create translation model and initialize or load parameters in session."""
   dtype = tf.float32
-  optimizer = AdamaxOptimizer(config.learning_rate) if adamax else tf.train.AdamOptimizer(config.learning_rate) 
+  optimizer = AdamaxOptimizer(config.learning_rate) if config.adamax else tf.train.AdamOptimizer(config.learning_rate) 
   if config.elu:
     activation = tf.nn.elu
   elif config.activation == "elu":
@@ -136,7 +145,6 @@ def create_model(session, config, forward_only):
     activation = prelu
   else:
     activation = tf.nn.relu
-  activation = tf.nn.elu if config.elu else tf.nn.relu
   weight_initializer = tf.orthogonal_initializer if config.orthogonal_initializer else tf.uniform_unit_scaling_initializer
   bias_initializer = tf.zeros_initializer
   model = seq2seq_model.Seq2SeqModel(
@@ -516,8 +524,8 @@ class Struct(object):
       self.__dict__.update({ "iaf": False })
     if not self.__dict__.get("adamax"):
       self.__dict__.update({ "adamax": False })
-    if not self.__dict__.get("relu"):
-      self.__dict__.update({ "relu": False })
+    if not self.__dict__.get("elu"):
+      self.__dict__.update({ "elu": False })
 
 
 def main(_):

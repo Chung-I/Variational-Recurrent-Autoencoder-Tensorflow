@@ -60,7 +60,7 @@ class Seq2SeqModel(object):
                latent_splits=8,
                Lambda=2,
                word_dropout_keep_prob=1.0,
-               beam_size=2,
+               beam_size=1,
                annealing=False,
                lower_bound_KL=True,
                kl_rate_rise_time=None,
@@ -200,19 +200,8 @@ class Seq2SeqModel(object):
           embedding_size=size,
           output_projection=output_projection,
           feed_previous=feed_previous,
-          weight_initializer=weight_initializer)
-
-    def beam_decoder_f(encoder_state, decoder_inputs):
-      beam_decoder = BeamDecoder(target_vocab_size, beam_size=beam_size, max_len=len(decoder_inputs))
-      with variable_scope.variable_scope("beam_decoder_f") as scope:
-        decoder_inputs = [tf.nn.embedding_lookup(self.dec_embedding, i) for i in decoder_inputs]
-        _, final_state = seq2seq.rnn_decoder(
-            [beam_decoder.wrap_input(decoder_input) for decoder_input in decoder_inputs],
-            beam_decoder.wrap_state(encoder_state), beam_decoder.wrap_cell(cell),
-            loop_function = lambda prev_symbol, i: tf.nn.embedding_lookup(self.dec_embedding, prev_symbol))
-        best_dense = beam_decoder.unwrap_output_dense(final_state) # Dense tensor output, right-aligned
-        best_sparse = beam_decoder.unwrap_output_sparse(final_state) # Output, this time as a sparse tensor
-      return best_dense, final_state
+          weight_initializer=weight_initializer,
+          beam_size=beam_size)
 
     def latent_dec_f(latent_vector):
       return seq2seq.latent_to_decoder(latent_vector,
@@ -296,11 +285,18 @@ class Seq2SeqModel(object):
       self.means, self.logvars = seq2seq.variational_encoder_with_buckets(
           self.encoder_inputs, buckets, encoder_f, enc_latent_f,
           softmax_loss_function=softmax_loss_function)
-      self.outputs, self.losses, self.KL_divergences = seq2seq.variational_decoder_with_buckets(
-          self.means, self.logvars, self.decoder_inputs, targets,
-          self.target_weights, buckets, decoder,
-          latent_dec_f, kl_f, sample_f, iaf,
-          softmax_loss_function=softmax_loss_function)
+      if forward_only and beam_size > 1:
+        self.outputs, self.beam_path, self.beam_symbols, self.losses, self.KL_divergences = seq2seq.variational_beam_decoder_with_buckets(
+            self.means, self.logvars, self.decoder_inputs, targets,
+            self.target_weights, buckets, decoder,
+            latent_dec_f, kl_f, sample_f, iaf,
+            softmax_loss_function=softmax_loss_function)
+      else:
+        self.outputs, self.losses, self.KL_divergences = seq2seq.variational_decoder_with_buckets(
+            self.means, self.logvars, self.decoder_inputs, targets,
+            self.target_weights, buckets, decoder,
+            latent_dec_f, kl_f, sample_f, iaf,
+            softmax_loss_function=softmax_loss_function)
     else:
       self.outputs, self.losses = seq2seq.autoencoder_with_buckets(
           self.encoder_inputs, self.decoder_inputs, targets,
