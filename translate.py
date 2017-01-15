@@ -56,6 +56,17 @@ tf.app.flags.DEFINE_string("do", "train", "what to do. accepts train, interpolat
 
 FLAGS = tf.app.flags.FLAGS
 
+def prelu(x):
+  with tf.variable_scope("prelu") as scope:
+    alphas = tf.get_variable("alphas", [], initializer=tf.constant_initializer(0.0), dtype=tf.float32)
+    return tf.nn.relu(x) - tf.mul(alphas, tf.nn.relu(-x))
+
+
+def bad_prelu(x):
+  with tf.variable_scope("prelu") as scope:
+    alphas = tf.get_variable("alphas", [], initializer=tf.constant_initializer(0.0), dtype=tf.float32)
+    return tf.nn.relu(x) - alphas * (x - abs(x)) * 0.5
+
 
 def prelu(_x):
   with tf.variable_scope("prelu"):
@@ -136,8 +147,8 @@ def read_data(source_path, target_path, config, max_size=None):
 def create_model(session, config, forward_only):
   """Create translation model and initialize or load parameters in session."""
   dtype = tf.float32
-  optimizer = AdamaxOptimizer(config.learning_rate) if config.adamax else tf.train.AdamOptimizer(config.learning_rate) 
-  if config.elu:
+  optimizer = AdamaxOptimizer(config.learning_rate) if config.adamax else tf.train.AdamOptimizer(config.learning_rate)  #adamax currently not supported
+  if config.elu: #this is deprecated and will soon be removed
     activation = tf.nn.elu
   elif config.activation == "elu":
     activation = tf.nn.elu
@@ -504,8 +515,8 @@ def n_sample(sess, model, sentence, num_sample):
   mean = mean[0][0][0]
   logvar = logvar[0][0][0]
   means = [mean] * num_sample
-  zero_logvar = np.zeros(shape=logvar.shape)
-  logvars = [zero_logvar] + [logvar] * (num_sample - 1)
+  neg_inf_logvar = np.full(logvar.shape, -800.0, dtype=np.float32)
+  logvars = [neg_inf_logvar] + [logvar] * (num_sample - 1)
   outputs = decode(sess, model, means, logvars, len(config.buckets) - 1)
   with gfile.GFile(FLAGS.model_dir + ".{0}_sample.txt".format(num_sample), "w") as fo:
     for output in outputs:
@@ -523,12 +534,11 @@ def interpolate(sess, model, config, means, logvars, num_pts):
   for s, e in zip(means[0][0][0].tolist(),means[1][0][0].tolist()):
     pts.append(np.linspace(s, e, num_pts))
 
-
   pts = np.array(pts)
   pts = pts.T
   pts = [np.array(pt) for pt in pts.tolist()]
   bucket_id = len(config.buckets) - 1
-  logvars = [np.zeros(shape=pt.shape) for pt in pts]
+  logvars = [np.full(pt.shape, -800.0, dtype=np.float32) for pt in pts]
   outputs = decode(sess, model, config, pts, logvars, bucket_id)
 
   return outputs
@@ -549,12 +559,12 @@ class Struct(object):
       self.__dict__.update({ "iaf": False })
     if not self.__dict__.get("adamax"):
       self.__dict__.update({ "adamax": False })
-    if not self.__dict__.get("elu"):
+    if not self.__dict__.get('elu'):
       self.__dict__.update({ "elu": False })
 
 
 def main(_):
-  
+
   with open(os.path.join(FLAGS.model_dir, "config.json")) as config_file:
     configs = json.load(config_file)
 

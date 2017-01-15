@@ -1326,7 +1326,7 @@ def embedding_encoder(encoder_inputs,
     emb_inp = [embedding_ops.embedding_lookup(embedding, i) for i in encoder_inputs]
     if bidirectional:
       _, output_state_fw, output_state_bw = rnn.bidirectional_rnn(cell, cell, emb_inp,
-              sequence_length=len(emb_inp),dtype=dtype)
+              dtype=dtype)
       encoder_state = tf.concat(1, [output_state_fw, output_state_bw])
     else:
       _, encoder_state = rnn.rnn(
@@ -1421,8 +1421,10 @@ def lower_bounded_KL_divergence(means, logvars, M, Lambda):
   splitted_logvars = tf.split(1, M, logvars)
   def kl_f(mean,logvar):
     return -0.5 * tf.reduce_sum((logvar - tf.square(mean) - tf.exp(logvar) + 1.0), 1)
+  kl_costs = [tf.reduce_mean(kl_f(mean, logvar)) for (mean, logvar) in zip(splitted_means, splitted_logvars)]
 
-  return math_ops.add_n([tf.maximum(tf.reduce_mean(kl_f(mean, logvar)), Lambda)  for (mean, logvar) in zip(splitted_means, splitted_logvars)])
+  return math_ops.add_n([tf.maximum(kl_cost, Lambda) for kl_cost in kl_costs]), math_ops.add_n(kl_costs)
+
 
 def KL_divergence(means, logvars):
   return -0.5 * tf.reduce_sum((logvars - tf.square(means) -
@@ -1594,11 +1596,12 @@ def iaf_sample(means, logvars, latent_dim, Lambda, dtype=None):
     L = L * mask
     latent_vector = tf.matmul(z, L)
     logps = prior.logps(latent_vector)
-    kl_cost = logps - logqs
+    kl_cost = logqs - logps
     kl_ave = tf.reduce_mean(kl_cost, [0])
-    kl_ave = tf.reduce_sum(tf.maximum(kl_ave, Lambda))
+    kl_cost = tf.reduce_sum(kl_ave)
+    kl_obj = tf.reduce_sum(tf.maximum(kl_ave, Lambda))
 
-    return latent_vector, kl_ave
+    return latent_vector, kl_obj, kl_cost
 
 def encoder_to_latent(encoder_state,
                       embedding_size,
@@ -1796,24 +1799,26 @@ def variational_decoder_with_buckets(means, logvars, decoder_inputs,
   all_inputs = decoder_inputs + targets + weights
   losses = []
   outputs = []
-  KL_divergences = []
+  KL_objs = []
+  KL_costs = []
   print("variational_decoder_with_buckets")
   with ops.name_scope(name, "variational_decoder_with_buckets", all_inputs):
     for j, bucket in enumerate(buckets):
       with variable_scope.variable_scope(variable_scope.get_variable_scope(),
                                            reuse=True if j > 0 else None):
         if iaf:
-          latent_vector, kl_cost = sample(means[j], logvars[j])
+          latent_vector, kl_obj, kl_cost = sample(means[j], logvars[j])
         else:
           latent_vector = sample(means[j], logvars[j])
-          kl_cost = kl_f(means[j], logvars[j])
+          kl_obj, kl_cost = kl_f(means[j], logvars[j])
         decoder_initial_state = latent_dec(latent_vector)
 
         bucket_outputs, _ = decoder(decoder_initial_state, decoder_inputs[:bucket[1]])
         outputs.append(bucket_outputs)
         total_size = math_ops.add_n(weights[:bucket[1]])
         total_size += 1e-12 
-        KL_divergences.append(tf.reduce_mean(kl_cost / total_size))
+        KL_objs.append(tf.reduce_mean(kl_obj / total_size))
+        KL_costs.append(tf.reduce_mean(kl_cost / total_size))
         if per_example_loss:
           losses.append(sequence_loss_by_example(
               outputs[-1], targets[:bucket[1]], weights[:bucket[1]],
@@ -1823,6 +1828,7 @@ def variational_decoder_with_buckets(means, logvars, decoder_inputs,
               outputs[-1], targets[:bucket[1]], weights[:bucket[1]],
               softmax_loss_function=softmax_loss_function))
 
+<<<<<<< HEAD
   return outputs, losses, KL_divergences
 
 
@@ -1874,4 +1880,4 @@ def variational_beam_decoder_with_buckets(means, logvars, decoder_inputs,
               outputs[-1], targets[:bucket[1]], weights[:bucket[1]],
               softmax_loss_function=softmax_loss_function))
 
-  return outputs, beam_paths, beam_symbols, losses, KL_divergences
+  return outputs, losses, KL_objs, KL_costs

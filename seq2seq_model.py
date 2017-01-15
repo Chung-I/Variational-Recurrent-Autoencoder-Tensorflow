@@ -81,6 +81,7 @@ class Seq2SeqModel(object):
                weight_initializer=None,
                bias_initializer=None,
                iaf=False,
+               adamax=False,
                dtype=tf.float32):
     """Create the model.
 
@@ -184,7 +185,7 @@ class Seq2SeqModel(object):
           embedding=self.enc_embedding,
           num_symbols=source_vocab_size,
           embedding_size=size,
-          bidirectional=False,
+          bidirectional=bidirectional,
           weight_initializer=weight_initializer,
           dtype=dtype)
 
@@ -285,18 +286,11 @@ class Seq2SeqModel(object):
       self.means, self.logvars = seq2seq.variational_encoder_with_buckets(
           self.encoder_inputs, buckets, encoder_f, enc_latent_f,
           softmax_loss_function=softmax_loss_function)
-      if forward_only and beam_size > 1:
-        self.outputs, self.beam_path, self.beam_symbols, self.losses, self.KL_divergences = seq2seq.variational_beam_decoder_with_buckets(
-            self.means, self.logvars, self.decoder_inputs, targets,
-            self.target_weights, buckets, decoder,
-            latent_dec_f, kl_f, sample_f, iaf,
-            softmax_loss_function=softmax_loss_function)
-      else:
-        self.outputs, self.losses, self.KL_divergences = seq2seq.variational_decoder_with_buckets(
-            self.means, self.logvars, self.decoder_inputs, targets,
-            self.target_weights, buckets, decoder,
-            latent_dec_f, kl_f, sample_f, iaf,
-            softmax_loss_function=softmax_loss_function)
+      self.outputs, self.losses, self.KL_objs, self.KL_costs = seq2seq.variational_decoder_with_buckets(
+          self.means, self.logvars, self.decoder_inputs, targets,
+          self.target_weights, buckets, decoder,
+          latent_dec_f, kl_f, sample_f, iaf,
+          softmax_loss_function=softmax_loss_function)
     else:
       self.outputs, self.losses = seq2seq.autoencoder_with_buckets(
           self.encoder_inputs, self.decoder_inputs, targets,
@@ -312,26 +306,39 @@ class Seq2SeqModel(object):
     # Gradients and SGD update operation for training the model.
     params = tf.trainable_variables()
     if not forward_only:
+      ema = tf.train.ExponentialMovingAverage(decay=0.999)
       self.gradient_norms = []
       self.updates = []
       for b in xrange(len(buckets)):
         if probabilistic:
           if annealing:
-            annealed_KL_divergence = self.kl_rate * self.KL_divergences[b]
+            annealed_KL_divergence = self.kl_rate * self.KL_objs[b]
             total_loss = self.losses[b] + annealed_KL_divergence
           else:
             print("kl_divergence taken into account")
-            total_loss = self.losses[b] + self.KL_divergences[b]
+            total_loss = self.losses[b] + self.KL_objs[b]
         else:
             total_loss = self.losses[b]
         gradients = tf.gradients(total_loss, params)
         clipped_gradients, norm = tf.clip_by_global_norm(gradients,
                                                          max_gradient_norm)
         self.gradient_norms.append(norm)
-        self.updates.append(optimizer.apply_gradients(
-            zip(clipped_gradients, params), global_step=self.global_step))
+        if adamax:
+          with tf.name_scope(None):  # This is needed due to EMA implementation silliness.
+            # keep track of moving average
+            train_op = optimizer.apply_gradients(
+                    zip(clipped_gradients, params), global_step=self.global_step)
+            train_op = tf.group(*[train_op, ema.apply(params)])
+            self.updates.append(train_op)
+        else:
+          self.updates.append(optimizer.apply_gradients(
+              zip(clipped_gradients, params), global_step=self.global_step))
 
-    self.saver = tf.train.Saver(tf.global_variables())
+    if adamax:
+      self.avg_dict = ema.variables_to_restore()
+      self.saver = tf.train.Saver(self.avg_dict)
+    else:
+      self.saver = tf.train.Saver(tf.global_variables())
 
 
 
@@ -382,20 +389,16 @@ class Seq2SeqModel(object):
     last_target = self.decoder_inputs[decoder_size].name
     input_feed[last_target] = np.zeros([self.batch_size], dtype=np.int32)
     if not self.probabilistic:
-      input_feed[self.logvars[bucket_id]] = np.zeros([self.batch_size, self.latent_dim], dtype=np.int32)
+      input_feed[self.logvars[bucket_id]] = np.full((self.batch_size, self.latent_dim), -800.0, dtype=np.float32)
 
     # Output feed: depends on whether we do a backward step or not.
     if not forward_only:
       output_feed = [self.updates[bucket_id],  # Update Op that does SGD.
                      self.gradient_norms[bucket_id],  # Gradient norm.
                      self.losses[bucket_id],
-                     self.KL_divergences[bucket_id]]  # Loss for this batch.
+                     self.KL_costs[bucket_id]]  # Loss for this batch.
     else:
-      if beam_size > 1:
-        output_feed = [self.beam_path[bucket_id]]  # Loss for this batch.
-        output_feed.append(self.beam_symbol[bucket_id])
-      else:
-        output_feed = [self.losses[bucket_id], self.KL_divergences[bucket_id]]  # Loss for this batch.
+      output_feed = [self.losses[bucket_id], self.KL_costs[bucket_id]]  # Loss for this batch.
       for l in xrange(decoder_size):  # Output logits.
         output_feed.append(self.outputs[bucket_id][l])
 
@@ -434,10 +437,7 @@ class Seq2SeqModel(object):
     _, decoder_size = self.buckets[bucket_id]
     # Input feed: means.
     input_feed = {self.means[bucket_id]: means}
-    if not self.probabilistic:
-      input_feed[self.logvars[bucket_id]] = np.zeros([self.batch_size, self.latent_dim], dtype=np.int32)
-    else:
-      input_feed[self.logvars[bucket_id]] = logvars
+    input_feed[self.logvars[bucket_id]] = logvars
 
     for l in xrange(decoder_size):
       input_feed[self.decoder_inputs[l].name] = decoder_inputs[l]
