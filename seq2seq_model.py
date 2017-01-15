@@ -400,7 +400,7 @@ class Seq2SeqModel(object):
     last_target = self.decoder_inputs[decoder_size].name
     input_feed[last_target] = np.zeros([self.batch_size], dtype=np.int32)
     if not self.probabilistic:
-      input_feed[self.logvars[bucket_id]] = np.zeros([self.batch_size, self.latent_dim], dtype=np.int32)
+      input_feed[self.logvars[bucket_id]] = np.full((self.batch_size, self.latent_dim), -800.0, dtype=np.float32)
 
     # Output feed: depends on whether we do a backward step or not.
     if not forward_only:
@@ -445,10 +445,7 @@ class Seq2SeqModel(object):
     _, decoder_size = self.buckets[bucket_id]
     # Input feed: means.
     input_feed = {self.means[bucket_id]: means}
-    if not self.probabilistic:
-      input_feed[self.logvars[bucket_id]] = np.zeros([self.batch_size, self.latent_dim], dtype=np.int32)
-    else:
-      input_feed[self.logvars[bucket_id]] = logvars
+    input_feed[self.logvars[bucket_id]] = logvars
 
     for l in xrange(decoder_size):
       input_feed[self.decoder_inputs[l].name] = decoder_inputs[l]

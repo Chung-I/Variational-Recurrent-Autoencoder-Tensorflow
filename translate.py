@@ -49,7 +49,6 @@ import h5py
 from tensorflow.python.platform import gfile
 from tensorflow.contrib.tensorboard.plugins import projector
 from utils.adamax import AdamaxOptimizer
-import utils.prelu
 import pdb
 
 tf.app.flags.DEFINE_string("model_dir", "input.txt", "directory of the model.")
@@ -57,6 +56,17 @@ tf.app.flags.DEFINE_boolean("new", True, "whether this is a new model or not.")
 tf.app.flags.DEFINE_string("do", "train", "what to do. accepts train, interpolate, sample, and decode.")
 
 FLAGS = tf.app.flags.FLAGS
+
+def prelu(x):
+  with tf.variable_scope("prelu") as scope:
+    alphas = tf.get_variable("alphas", [], initializer=tf.constant_initializer(0.0), dtype=tf.float32)
+    return tf.nn.relu(x) - tf.mul(alphas, tf.nn.relu(-x))
+
+
+def bad_prelu(x):
+  with tf.variable_scope("prelu") as scope:
+    alphas = tf.get_variable("alphas", [], initializer=tf.constant_initializer(0.0), dtype=tf.float32)
+    return tf.nn.relu(x) - alphas * (x - abs(x)) * 0.5
 
 
 def maybe_create_statistics(config):
@@ -134,7 +144,7 @@ def create_model(session, config, forward_only):
   elif config.activation == "elu":
     activation = tf.nn.elu
   elif config.activation == "prelu":
-    activation = utils.prelu.prelu
+    activation = prelu
   elif config.activation == "none":
     activation = tf.identity
   else:
@@ -473,8 +483,8 @@ def n_sample(sess, model, sentence, num_sample):
   mean = mean[0][0][0]
   logvar = logvar[0][0][0]
   means = [mean] * num_sample
-  zero_logvar = np.zeros(shape=logvar.shape)
-  logvars = [zero_logvar] + [logvar] * (num_sample - 1)
+  neg_inf_logvar = np.full(logvar.shape, -800.0, dtype=np.float32)
+  logvars = [neg_inf_logvar] + [logvar] * (num_sample - 1)
   outputs = decode(sess, model, means, logvars, len(config.buckets) - 1)
   with gfile.GFile(FLAGS.model_dir + ".{0}_sample.txt".format(num_sample), "w") as fo:
     for output in outputs:
@@ -492,12 +502,11 @@ def interpolate(sess, model, config, means, logvars, num_pts):
   for s, e in zip(means[0][0][0].tolist(),means[1][0][0].tolist()):
     pts.append(np.linspace(s, e, num_pts))
 
-
   pts = np.array(pts)
   pts = pts.T
   pts = [np.array(pt) for pt in pts.tolist()]
   bucket_id = len(config.buckets) - 1
-  logvars = [np.zeros(shape=pt.shape) for pt in pts]
+  logvars = [np.full(pt.shape, -800.0, dtype=np.float32) for pt in pts]
   outputs = decode(sess, model, config, pts, logvars, bucket_id)
 
   return outputs

@@ -1509,7 +1509,7 @@ def iaf_sample(means, logvars, latent_dim, Lambda, dtype=None):
     L = L * mask
     latent_vector = tf.matmul(z, L)
     logps = prior.logps(latent_vector)
-    kl_cost = logps - logqs
+    kl_cost = logqs - logps
     kl_ave = tf.reduce_mean(kl_cost, [0])
     kl_cost = tf.reduce_sum(kl_ave)
     kl_obj = tf.reduce_sum(tf.maximum(kl_ave, Lambda))
@@ -1723,7 +1723,7 @@ def variational_decoder_with_buckets(means, logvars, decoder_inputs,
           latent_vector, kl_obj, kl_cost = sample(means[j], logvars[j])
         else:
           latent_vector = sample(means[j], logvars[j])
-          kl_obj = kl_f(means[j], logvars[j])
+          kl_obj, kl_cost = kl_f(means[j], logvars[j])
         decoder_initial_state = latent_dec(latent_vector)
 
         bucket_outputs, _ = decoder(decoder_initial_state, decoder_inputs[:bucket[1]])
@@ -1731,7 +1731,7 @@ def variational_decoder_with_buckets(means, logvars, decoder_inputs,
         total_size = math_ops.add_n(weights[:bucket[1]])
         total_size += 1e-12 
         KL_objs.append(tf.reduce_mean(kl_obj / total_size))
-        KL_costs.append(tf.reduce_mean(kl_costs / total_size))
+        KL_costs.append(tf.reduce_mean(kl_cost / total_size))
         if per_example_loss:
           losses.append(sequence_loss_by_example(
               outputs[-1], targets[:bucket[1]], weights[:bucket[1]],
