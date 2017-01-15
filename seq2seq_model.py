@@ -297,7 +297,7 @@ class Seq2SeqModel(object):
       self.means, self.logvars = seq2seq.variational_encoder_with_buckets(
           self.encoder_inputs, buckets, encoder_f, enc_latent_f,
           softmax_loss_function=softmax_loss_function)
-      self.outputs, self.losses, self.KL_divergences = seq2seq.variational_decoder_with_buckets(
+      self.outputs, self.losses, self.KL_objs, self.KL_costs = seq2seq.variational_decoder_with_buckets(
           self.means, self.logvars, self.decoder_inputs, targets,
           self.target_weights, buckets, decoder,
           latent_dec_f, kl_f, sample_f, iaf,
@@ -323,11 +323,11 @@ class Seq2SeqModel(object):
       for b in xrange(len(buckets)):
         if probabilistic:
           if annealing:
-            annealed_KL_divergence = self.kl_rate * self.KL_divergences[b]
+            annealed_KL_divergence = self.kl_rate * self.KL_objs[b]
             total_loss = self.losses[b] + annealed_KL_divergence
           else:
             print("kl_divergence taken into account")
-            total_loss = self.losses[b] + self.KL_divergences[b]
+            total_loss = self.losses[b] + self.KL_objs[b]
         else:
             total_loss = self.losses[b]
         gradients = tf.gradients(total_loss, params)
@@ -407,9 +407,9 @@ class Seq2SeqModel(object):
       output_feed = [self.updates[bucket_id],  # Update Op that does SGD.
                      self.gradient_norms[bucket_id],  # Gradient norm.
                      self.losses[bucket_id],
-                     self.KL_divergences[bucket_id]]  # Loss for this batch.
+                     self.KL_costs[bucket_id]]  # Loss for this batch.
     else:
-      output_feed = [self.losses[bucket_id], self.KL_divergences[bucket_id]]  # Loss for this batch.
+      output_feed = [self.losses[bucket_id], self.KL_costs[bucket_id]]  # Loss for this batch.
       for l in xrange(decoder_size):  # Output logits.
         output_feed.append(self.outputs[bucket_id][l])
 
