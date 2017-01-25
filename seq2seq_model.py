@@ -112,7 +112,7 @@ class Seq2SeqModel(object):
 
     self.replace_input = None
     replace_input = None
-    if word_dropout_keep_prob < 1:
+    if word_dropout_keep_prob < 1:  #feed UNK if word dropout keep rate less than 1
       self.replace_input = tf.placeholder(tf.int32, shape=[None], name="replace_input")
       replace_input = tf.nn.embedding_lookup(self.dec_embedding, self.replace_input)
 

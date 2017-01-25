@@ -61,16 +61,6 @@ def prelu(x):
     return tf.nn.relu(x) - tf.mul(alphas, tf.nn.relu(-x))
 
 
-def prelu(_x):
-  with tf.variable_scope("prelu"):
-    alphas = tf.get_variable('alpha', _x.get_shape()[-1],
-      initializer=tf.constant_initializer(0.0),
-      dtype=tf.float32)
-    pos = tf.nn.relu(_x)
-    neg = alphas * (_x - abs(_x)) * 0.5
-    return pos + neg
-
-
 def maybe_create_statistics(config):
   stat_file_name = "stats/" + FLAGS.model_name + ".json" 
   if FLAGS.new:
@@ -147,8 +137,10 @@ def create_model(session, config, forward_only):
     activation = prelu
   else:
     activation = tf.identity
+
   weight_initializer = tf.orthogonal_initializer if config.orthogonal_initializer else tf.uniform_unit_scaling_initializer
   bias_initializer = tf.zeros_initializer
+
   model = seq2seq_model.Seq2SeqModel(
       config.en_vocab_size,
       config.fr_vocab_size,
