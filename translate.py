@@ -153,6 +153,7 @@ def create_model(session, config, forward_only):
       config.learning_rate,
       config.Lambda,
       config.word_dropout_keep_prob,
+      config.anneal,
       config.lower_bound_KL,
       config.kl_rate_rise_time,
       config.kl_rate_rise_factor,

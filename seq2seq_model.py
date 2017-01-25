@@ -57,6 +57,7 @@ class Seq2SeqModel(object):
                learning_rate,
                Lambda=2,
                word_dropout_keep_prob=1.0,
+               anneal=False,
                lower_bound_KL=True,
                kl_rate_rise_time=None,
                kl_rate_rise_factor=None,
@@ -103,6 +104,7 @@ class Seq2SeqModel(object):
     self.word_dropout_keep_prob = word_dropout_keep_prob
     self.Lambda = Lambda
     feed_previous = feed_previous or forward_only
+
     self.learning_rate = tf.Variable(
         float(learning_rate), trainable=False, dtype=dtype)
 
@@ -181,9 +183,14 @@ class Seq2SeqModel(object):
 
     def sample_f(mean, logvar):
       return seq2seq.sample(
-        mean, logva b
-        ze=batc latent__fdim=latent_dim,
-        dtype=dtype)
+           mean,
+           logvar,
+           latent_dim,
+           iaf,
+           Lambda,
+           anneal,
+           kl_rate,
+           dtype)
 
     # The seq2seq function: we use embedding for the input and attention.
     def seq2seq_f(encoder_inputs, decoder_inputs, do_decode):
@@ -242,6 +249,12 @@ class Seq2SeqModel(object):
         clipped_gradients, norm = tf.clip_by_global_norm(gradients,
                                                          max_gradient_norm)
         self.gradient_norms.append(norm)
+        self.updates.append(optimizer.apply_gradients(
+            zip(clipped_gradients, params), global_step=self.global_step))
+
+        self.saver = tf.train.Saver(tf.global_variables())
+
+
 def step(self, session, encoder_inputs, decoder_inputs, target_weights,
            bucket_id, forward_only, beam_size=1):
   """Run a step of the model feeding the given inputs.
