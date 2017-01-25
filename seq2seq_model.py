@@ -28,8 +28,6 @@ import tensorflow as tf
 import data_utils
 import seq2seq
 import pdb
-from bnlstm import BNLSTMCell
-from tf_beam_decoder import BeamDecoder
 from tensorflow.python.ops import variable_scope
 
 class Seq2SeqModel(object):
@@ -57,31 +55,22 @@ class Seq2SeqModel(object):
                max_gradient_norm,
                batch_size,
                learning_rate,
-               latent_splits=8,
                Lambda=2,
                word_dropout_keep_prob=1.0,
-               beam_size=1,
-               annealing=False,
                lower_bound_KL=True,
                kl_rate_rise_time=None,
                kl_rate_rise_factor=None,
                use_lstm=False,
-               mean_logvar_split=False,
-               load_embeddings=False,
-               Lambda_annealing=False,
                num_samples=512,
                optimizer=None,
                activation=tf.nn.relu,
-               dnn_in_between=False,
                probabilistic=False,
-               batch_norm=False,
                forward_only=False,
                feed_previous=True,
                bidirectional=False,
                weight_initializer=None,
                bias_initializer=None,
                iaf=False,
-               adamax=False,
                dtype=tf.float32):
     """Create the model.
 
@@ -114,33 +103,18 @@ class Seq2SeqModel(object):
     self.word_dropout_keep_prob = word_dropout_keep_prob
     self.Lambda = Lambda
     feed_previous = feed_previous or forward_only
-    if Lambda_annealing:
-      self.Lambda = tf.Variable(
-          Lambda, trainable=False, dtype=dtype)
-      self.Lambda_divide_by_two_op = self.Lambda.assign(
-          self.Lambda / 2)
     self.learning_rate = tf.Variable(
         float(learning_rate), trainable=False, dtype=dtype)
 
     self.enc_embedding = tf.get_variable("enc_embedding", [source_vocab_size, size], dtype=dtype, initializer=weight_initializer())
-    self.enc_embedding_placeholder = tf.placeholder(tf.float32, [source_vocab_size, size])
-    self.enc_embedding_init_op = self.enc_embedding.assign(self.enc_embedding_placeholder)
 
     self.dec_embedding = tf.get_variable("dec_embedding", [target_vocab_size, size], dtype=dtype, initializer=weight_initializer())
-    self.dec_embedding_placeholder = tf.placeholder(tf.float32, [target_vocab_size, size])
-    self.dec_embedding_init_op = self.dec_embedding.assign(self.dec_embedding_placeholder)
 
     self.replace_input = None
     replace_input = None
     if word_dropout_keep_prob < 1:
       self.replace_input = tf.placeholder(tf.int32, shape=[None], name="replace_input")
       replace_input = tf.nn.embedding_lookup(self.dec_embedding, self.replace_input)
-
-    self.kl_rate = tf.Variable(
-        0, trainable=False, dtype=dtype)
-    self.kl_rate_rise_op = self.kl_rate.assign(
-        self.kl_rate + kl_rate_rise_factor)
-
 
     self.global_step = tf.Variable(0, trainable=False)
 
@@ -169,11 +143,7 @@ class Seq2SeqModel(object):
     # Create the internal multi-layer cell for our RNN.
     single_cell = tf.nn.rnn_cell.GRUCell(size)
     if use_lstm:
-      if batch_norm:
-        tf_forward_only = tf.Variable(forward_only)
-        single_cell = BNLSTMCell(size, tf_forward_only)
-      else:
-        single_cell = tf.nn.rnn_cell.BasicLSTMCell(size)
+      single_cell = tf.nn.rnn_cell.BasicLSTMCell(size)
     cell = single_cell
     if num_layers > 1:
       cell = tf.nn.rnn_cell.MultiRNNCell([single_cell] * num_layers)
@@ -201,8 +171,7 @@ class Seq2SeqModel(object):
           embedding_size=size,
           output_projection=output_projection,
           feed_previous=feed_previous,
-          weight_initializer=weight_initializer,
-          beam_size=beam_size)
+          weight_initializer=weight_initializer)
 
     def latent_dec_f(latent_vector):
       return seq2seq.latent_to_decoder(latent_vector,
@@ -215,7 +184,7 @@ class Seq2SeqModel(object):
 
     def lower_bounded_kl_f(mean, logvar):
       return seq2seq.lower_bounded_KL_divergence(
-        mean, logvar, latent_splits, self.Lambda)
+        mean, logvar, self.Lambda)
 
     def iaf_sample_f(means, logvars):
       return seq2seq.iaf_sample(
@@ -273,14 +242,12 @@ class Seq2SeqModel(object):
     if iaf:
       sample_f = iaf_sample_f
 
-    if annealing and not lower_bound_KL:
+    if not lower_bound_KL:
       kl_f = seq2seq.KL_divergence
     else:
       kl_f = lower_bounded_kl_f
-    if beam_size > 1:
-      decoder = beam_decoder_f
-    else:
-      decoder = decoder_f
+
+    decoder = decoder_f
     # Training outputs and losses.
     if dnn_in_between:
       self.means, self.logvars = seq2seq.variational_encoder_with_buckets(
@@ -306,39 +273,21 @@ class Seq2SeqModel(object):
     # Gradients and SGD update operation for training the model.
     params = tf.trainable_variables()
     if not forward_only:
-      ema = tf.train.ExponentialMovingAverage(decay=0.999)
       self.gradient_norms = []
       self.updates = []
       for b in xrange(len(buckets)):
         if probabilistic:
-          if annealing:
-            annealed_KL_divergence = self.kl_rate * self.KL_objs[b]
-            total_loss = self.losses[b] + annealed_KL_divergence
-          else:
-            print("kl_divergence taken into account")
-            total_loss = self.losses[b] + self.KL_objs[b]
+          total_loss = self.losses[b] + self.KL_objs[b]
         else:
-            total_loss = self.losses[b]
+          total_loss = self.losses[b]
         gradients = tf.gradients(total_loss, params)
         clipped_gradients, norm = tf.clip_by_global_norm(gradients,
                                                          max_gradient_norm)
         self.gradient_norms.append(norm)
-        if adamax:
-          with tf.name_scope(None):  # This is needed due to EMA implementation silliness.
-            # keep track of moving average
-            train_op = optimizer.apply_gradients(
-                    zip(clipped_gradients, params), global_step=self.global_step)
-            train_op = tf.group(*[train_op, ema.apply(params)])
-            self.updates.append(train_op)
-        else:
-          self.updates.append(optimizer.apply_gradients(
-              zip(clipped_gradients, params), global_step=self.global_step))
+        self.updates.append(optimizer.apply_gradients(
+          zip(clipped_gradients, params), global_step=self.global_step))
 
-    if adamax:
-      self.avg_dict = ema.variables_to_restore()
-      self.saver = tf.train.Saver(self.avg_dict)
-    else:
-      self.saver = tf.train.Saver(tf.global_variables())
+    self.saver = tf.train.Saver(tf.global_variables())
 
 
 

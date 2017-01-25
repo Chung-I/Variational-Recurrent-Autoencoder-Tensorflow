@@ -18,3 +18,5 @@ interp.txt
 *txt
 *swp
 config.json
+config_plot.py
+plots/

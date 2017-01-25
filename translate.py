@@ -47,12 +47,11 @@ import data_utils
 import seq2seq_model
 import h5py
 from tensorflow.python.platform import gfile
-from tensorflow.contrib.tensorboard.plugins import projector
-from utils.adamax import AdamaxOptimizer
 
 tf.app.flags.DEFINE_string("model_dir", "input.txt", "directory of the model.")
 tf.app.flags.DEFINE_boolean("new", True, "whether this is a new model or not.")
 tf.app.flags.DEFINE_string("do", "train", "what to do. accepts train, interpolate, sample, and decode.")
+tf.app.flags.DEFINE_string("input_file", None, "what to do. accepts train, interpolate, sample, and decode.")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -60,12 +59,6 @@ def prelu(x):
   with tf.variable_scope("prelu") as scope:
     alphas = tf.get_variable("alphas", [], initializer=tf.constant_initializer(0.0), dtype=tf.float32)
     return tf.nn.relu(x) - tf.mul(alphas, tf.nn.relu(-x))
-
-
-def bad_prelu(x):
-  with tf.variable_scope("prelu") as scope:
-    alphas = tf.get_variable("alphas", [], initializer=tf.constant_initializer(0.0), dtype=tf.float32)
-    return tf.nn.relu(x) - alphas * (x - abs(x)) * 0.5
 
 
 def prelu(_x):
@@ -147,15 +140,13 @@ def read_data(source_path, target_path, config, max_size=None):
 def create_model(session, config, forward_only):
   """Create translation model and initialize or load parameters in session."""
   dtype = tf.float32
-  optimizer = AdamaxOptimizer(config.learning_rate) if config.adamax else tf.train.AdamOptimizer(config.learning_rate)  #adamax currently not supported
-  if config.elu: #this is deprecated and will soon be removed
-    activation = tf.nn.elu
-  elif config.activation == "elu":
+  optimizer = tf.train.AdamOptimizer(config.learning_rate)
+  if config.activation == "elu":
     activation = tf.nn.elu
   elif config.activation == "prelu":
     activation = prelu
   else:
-    activation = tf.nn.relu
+    activation = tf.identity
   weight_initializer = tf.orthogonal_initializer if config.orthogonal_initializer else tf.uniform_unit_scaling_initializer
   bias_initializer = tf.zeros_initializer
   model = seq2seq_model.Seq2SeqModel(
@@ -168,23 +159,15 @@ def create_model(session, config, forward_only):
       config.max_gradient_norm,
       config.batch_size,
       config.learning_rate,
-      config.latent_splits,
       config.Lambda,
       config.word_dropout_keep_prob,
-      config.beam_size,
-      config.annealing,
       config.lower_bound_KL,
       config.kl_rate_rise_time,
       config.kl_rate_rise_factor,
       config.use_lstm,
-      config.mean_logvar_split,
-      config.load_embeddings,
-      config.Lambda_annealing,
       optimizer=optimizer,
       activation=activation,
-      dnn_in_between=config.dnn_in_between,
       probabilistic=config.probabilistic,
-      batch_norm=config.batch_norm,
       forward_only=forward_only,
       feed_previous=config.feed_previous,
       bidirectional=config.bidirectional,
@@ -209,14 +192,10 @@ def train(config, encode_decode_config, interp_config):
   en_train, fr_train, en_dev, fr_dev, _, _ = data_utils.prepare_wmt_data(
       config.data_dir, config.en_vocab_size, config.fr_vocab_size, config.load_embeddings)
 
-  stats = maybe_create_statistics(config)
-
   with tf.Session() as sess:
     if not os.path.exists(FLAGS.model_dir):
       os.makedirs(FLAGS.model_dir)
 
-
-    stat_file_name = "stats/" + FLAGS.model_name + ".json" 
     # Create model.
     print("Creating %d layers of %d units." % (config.num_layers, config.size))
     model = create_model(sess, config, False)
@@ -238,26 +217,6 @@ def train(config, encode_decode_config, interp_config):
     # the size if i-th training bucket, as used later.
     train_buckets_scale = [sum(train_bucket_sizes[:i + 1]) / train_total_size
                            for i in xrange(len(train_bucket_sizes))]
-    if config.load_embeddings:
-      with h5py.File(config.data_dir + "/vocab{0}".format(config.en_vocab_size) + '.en.embeddings.h5','r') as h5f:
-        enc_embeddings = h5f['embeddings'][:]
-      sess.run(model.enc_embedding_init_op, feed_dict={model.enc_embedding_placeholder: enc_embeddings})
-      del enc_embeddings
-      with h5py.File(config.data_dir + "/vocab{0}".format(config.fr_vocab_size) + '.fr.embeddings.h5','r') as h5f:
-        dec_embeddings = h5f['embeddings'][:]
-      sess.run(model.dec_embedding_init_op, feed_dict={model.dec_embedding_placeholder: dec_embeddings})
-      del dec_embeddings
-
-    projector_config = projector.ProjectorConfig()
-    vis_enc_embedding = projector_config.embeddings.add()
-    vis_dec_embedding = projector_config.embeddings.add()
-    vis_enc_embedding.tensor_name = model.enc_embedding.name
-    vis_dec_embedding.tensor_name = model.dec_embedding.name
-    vis_enc_embedding.metadata_path = os.path.join("/data/home/iLikeNLP/zh_translate/",
-            config.data_dir, 'enc_embedding{0}.tsv'.format(config.en_vocab_size))
-    vis_dec_embedding.metadata_path = os.path.join("/data/home/iLikeNLP/zh_translate/",
-            config.data_dir, 'dec_embedding{0}.tsv'.format(config.fr_vocab_size))
-    projector.visualize_embeddings(train_writer, projector_config)
 
     # This is the training loop.
     step_time, loss = 0.0, 0.0
@@ -299,13 +258,6 @@ def train(config, encode_decode_config, interp_config):
                          step_time, KL_loss))
         wall_time = time.time() - overall_start_time
         print("time passed: {0}".format(wall_time))
-        stats['wall_time'][str(current_step)] = wall_time
-        if config.Lambda_annealing:
-          if perplexity < 1.05:
-            model.probabilistic = True
-            if model.Lambda.eval() > 16:
-              sess.run(model.Lambda_divide_by_two_op)
-          print("lambda: {0}".format(model.Lambda.eval()))
 
         # Add perplexity, KL divergence to summary and stats.
         perp_summary = tf.Summary(value=[tf.Summary.Value(tag="train perplexity", simple_value=perplexity)])
@@ -318,15 +270,6 @@ def train(config, encode_decode_config, interp_config):
         for i, summary in enumerate(step_KL_loss_summaries):
           train_writer.add_summary(summary, current_step - 200 + i)
         step_KL_loss_summaries = []
-
-
-        stats['train_perplexity'][str(current_step)] = perplexity
-        stats['train_KL_divergence'][str(current_step)] = KL_loss
-
-        if config.annealing:
-          if current_step >= config.kl_rate_rise_time and model.kl_rate.eval() < 1:
-            print("current kl rate: {0}".format(model.kl_rate.eval()))
-            sess.run(model.kl_rate_rise_op)
 
         # Save checkpoint and zero timer and loss.
         checkpoint_path = os.path.join(FLAGS.model_dir, FLAGS.model_name + ".ckpt")
@@ -360,15 +303,11 @@ def train(config, encode_decode_config, interp_config):
         mean_eval_ppx = math.exp(float(mean_eval_loss))
         print("  eval: mean perplexity {0}".format(mean_eval_ppx))
 
-        stats['eval_perplexity'][str(current_step)] = mean_eval_ppx
-        stats['eval_KL_divergence'][str(current_step)] = mean_eval_KL_loss
         eval_loss_summary = tf.Summary(value=[tf.Summary.Value(tag="mean eval loss", simple_value=float(mean_eval_ppx))])
         dev_writer.add_summary(eval_loss_summary, current_step)
         eval_KL_loss_summary = tf.Summary(value=[tf.Summary.Value(tag="mean eval loss", simple_value=float(mean_eval_KL_loss))])
         dev_writer.add_summary(eval_KL_loss_summary, current_step)
 
-        with open(stat_file_name, "w") as statfile:
-          statfile.write(json.dumps(stats))
 
         outputs = encode_interpolate(sess, model, interp_config)
         with gfile.GFile(FLAGS.model_dir + "/{0}.{1}.interpolate.txt".format(FLAGS.model_name,current_step), "w") as interp_file:
@@ -544,7 +483,11 @@ def interpolate(sess, model, config, means, logvars, num_pts):
   return outputs
 
 def encode_interpolate(sess, model, config):
-  with gfile.GFile(config.input_file, "r") as fs:
+  if FLAGS.input_file:
+    input_fname = FLAGS.input_file
+  else:
+    input_fname = config.input_file
+  with gfile.GFile(input_fname, "r") as fs:
     sentences = fs.readlines()
   model.batch_size = 1
   model.probabilistic = config.probabilistic
