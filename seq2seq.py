@@ -538,21 +538,6 @@ def sequence_loss(logits, targets, weights,
       return cost
 
 
-def lower_bounded_KL_divergence(means, logvars, Lambda):
-  splitted_means = tf.split(1, M, means)
-  splitted_logvars = tf.split(1, M, logvars)
-  def kl_f(mean,logvar):
-    return -0.5 * tf.reduce_sum((logvar - tf.square(mean) - tf.exp(logvar) + 1.0), 1)
-  kl_costs = [tf.reduce_mean(kl_f(mean, logvar)) for (mean, logvar) in zip(splitted_means, splitted_logvars)]
-
-  return math_ops.add_n([tf.maximum(kl_cost, Lambda) for kl_cost in kl_costs]), math_ops.add_n(kl_costs)
-
-
-def KL_divergence(means, logvars):
-  return -0.5 * tf.reduce_sum((logvars - tf.square(means) -
-    tf.exp(logvars) + 1.0), 1)
-
-
 def model_with_buckets(encoder_inputs, decoder_inputs, targets, weights,
                        buckets, seq2seq, softmax_loss_function=None,
                        per_example_loss=False, name=None):
@@ -691,18 +676,13 @@ def autoencoder_with_buckets(encoder_inputs, decoder_inputs, targets, weights,
   return outputs, losses
 
 
-def sample(mean, logvar, batch_size, latent_dim, dtype=None):
-  noise = tf.random_normal(tf.shape(mean))
-  sample = mean + tf.exp(0.5 * logvar) * noise
-
-
-
 def sample(means,
            logvars,
            latent_dim,
            iaf=True,
-           anneal=False,
            Lambda=None,
+           anneal=False,
+           kl_rate=None,
            dtype=None):
   if iaf:
     with tf.variable_scope('iaf'):
@@ -730,7 +710,7 @@ def sample(means,
     kl_cost = tf.reduce_sum(kl_ave)
     kl_obj = tf.reduce_sum(tf.maximum(kl_ave, Lambda))
   if anneal:
-    kl_obj = kl_obj
+    kl_obj = kl_obj * kl_rate
 
   return latent_vector, kl_obj, kl_cost
 
@@ -757,23 +737,11 @@ def encoder_to_latent(encoder_state,
   if num_layers > 1:
     encoder_state = tf.concat(1, encoder_state)
   with tf.variable_scope('encoder_to_latent'):
-    if mean_logvar_split:
-      with tf.variable_scope('mean'):
-        w = tf.get_variable("w",
-          [concat_state_size, latent_dim], dtype=dtype)
-        b = tf.get_variable("b", [latent_dim], dtype=dtype)
-        mean = activation(tf.matmul(encoder_state, w) + b)
-      with tf.variable_scope('logvar'):
-        w = tf.get_variable("w",
-          [concat_state_size, latent_dim], dtype=dtype)
-        b = tf.get_variable("b", [latent_dim], dtype=dtype)
-        logvar = prelu(tf.matmul(encoder_state, w) + b)
-    else:
-      w = tf.get_variable("w",[concat_state_size, 2 * latent_dim],
-        dtype=dtype)
-      b = tf.get_variable("b", [2 * latent_dim], dtype=dtype)
-      mean_logvar = prelu(tf.matmul(encoder_state, w) + b)
-      mean, logvar = tf.split(1, 2, mean_logvar)
+    w = tf.get_variable("w",[concat_state_size, 2 * latent_dim],
+      dtype=dtype)
+    b = tf.get_variable("b", [2 * latent_dim], dtype=dtype)
+    mean_logvar = prelu(tf.matmul(encoder_state, w) + b)
+    mean, logvar = tf.split(1, 2, mean_logvar)
     
 
   return mean, logvar
