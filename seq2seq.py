@@ -395,50 +395,7 @@ def embedding_encoder(encoder_inputs,
                       dtype=None,
                       weight_initializer=None,
                       scope=None):
-  """Embedding sequence-to-sequence model with attention.
 
-  This model first embeds encoder_inputs by a newly created embedding (of shape
-  [num_encoder_symbols x input_size]). Then it runs an RNN to encode
-  embedded encoder_inputs into a state vector. It keeps the outputs of this
-  RNN at every step to use for attention later. Next, it embeds decoder_inputs
-  by another newly created embedding (of shape [num_decoder_symbols x
-  input_size]). Then it runs attention decoder, initialized with the last
-  encoder state, on embedded decoder_inputs and attending to encoder outputs.
-
-  Warning: when output_projection is None, the size of the attention vectors
-  and variables will be made proportional to num_decoder_symbols, can be large.
-
-  Args:
-    encoder_inputs: A list of 1D int32 Tensors of shape [batch_size].
-    decoder_inputs: A list of 1D int32 Tensors of shape [batch_size].
-    cell: rnn_cell.RNNCell defining the cell function and size.
-    num_encoder_symbols: Integer; number of symbols on the encoder side.
-    num_decoder_symbols: Integer; number of symbols on the decoder side.
-    embedding_size: Integer, the length of the embedding vector for each symbol.
-    num_heads: Number of attention heads that read from attention_states.
-    output_projection: None or a pair (W, B) of output projection weights and
-      biases; W has shape [output_size x num_decoder_symbols] and B has
-      shape [num_decoder_symbols]; if provided and feed_previous=True, each
-      fed previous output will first be multiplied by W and added B.
-    feed_previous: Boolean or scalar Boolean Tensor; if True, only the first
-      of decoder_inputs will be used (the "GO" symbol), and all other decoder
-      inputs will be taken from previous outputs (as in embedding_rnn_decoder).
-      If False, decoder_inputs are used as given (the standard decoder case).
-    dtype: The dtype of the initial RNN state (default: tf.float32).
-    scope: VariableScope for the created subgraph; defaults to
-      "embedding_attention_seq2seq".
-    initial_state_attention: If False (default), initial attentions are zero.
-      If True, initialize the attentions from the initial state and attention
-      states.
-
-  Returns:
-    A tuple of the form (outputs, state), where:
-      outputs: A list of the same length as decoder_inputs of 2D Tensors with
-        shape [batch_size x num_decoder_symbols] containing the generated
-        outputs.
-      state: The state of each decoder cell at the final time-step.
-        It is a 2D Tensor of shape [batch_size x cell.state_size].
-  """
   with variable_scope.variable_scope(
       scope or "embedding_encoder", dtype=dtype) as scope:
     dtype = scope.dtype
@@ -684,6 +641,21 @@ def sample(means,
            anneal=False,
            kl_rate=None,
            dtype=None):
+  """Perform sampling and calculate KL divergence.
+
+  Args:
+    means: tensor of shape (batch_size, latent_dim)
+    logvars: tensor of shape (batch_size, latent_dim)
+    latent_dim: dimension of latent space.
+    iaf: perform linear IAF or not.
+    Lambda: lower bound for KL divergence.
+    anneal: perform KL cost annealing or not.
+    kl_rate: KL divergence is multiplied by kl_rate if anneal is set to True.
+  Returns:
+    latent_vector: latent variable after sampling. A vector of shape (batch_size, latent_dim).
+    kl_obj: objective to be minimized for the KL term.
+    kl_cost: real KL divergence.
+  """
   if iaf:
     with tf.variable_scope('iaf'):
       prior = DiagonalGaussian(tf.zeros_like(means, dtype=dtype),
@@ -705,14 +677,14 @@ def sample(means,
     sample = mean + tf.exp(0.5 * logvar) * noise
     kl_cost = -0.5 * (logvars - tf.square(means) -
         tf.exp(logvars) + 1.0)
+  kl_ave = tf.reduce_mean(kl_cost, [0]) #mean of kl_cost over batches
+  kl_obj = kl_cost = tf.reduce_sum(kl_ave)
   if Lambda:
-    kl_ave = tf.reduce_mean(kl_cost, [0])
-    kl_cost = tf.reduce_sum(kl_ave)
     kl_obj = tf.reduce_sum(tf.maximum(kl_ave, Lambda))
   if anneal:
     kl_obj = kl_obj * kl_rate
 
-  return latent_vector, kl_obj, kl_cost
+  return latent_vector, kl_obj, kl_cost #both kl_obj and kl_cost are scalar
 
 def encoder_to_latent(encoder_state,
                       embedding_size,
@@ -883,7 +855,7 @@ def variational_encoder_with_buckets(encoder_inputs, buckets, encoder,
 
 def variational_decoder_with_buckets(means, logvars, decoder_inputs,
                        targets, weights,
-                       buckets, decoder, latent_dec, kl_f, sample, iaf=False,
+                       buckets, decoder, latent_dec, sample,
                        softmax_loss_function=None,
                        per_example_loss=False, name=None):
   """Create a sequence-to-sequence model with support for bucketing.
@@ -905,11 +877,8 @@ def variational_decoder_with_buckets(means, logvars, decoder_inputs,
     for j, bucket in enumerate(buckets):
       with variable_scope.variable_scope(variable_scope.get_variable_scope(),
                                            reuse=True if j > 0 else None):
-        if iaf:
-          latent_vector, kl_obj, kl_cost = sample(means[j], logvars[j])
-        else:
-          latent_vector = sample(means[j], logvars[j])
-          kl_obj, kl_cost = kl_f(means[j], logvars[j])
+
+        latent_vector, kl_obj, kl_cost = sample(means[j], logvars[j])
         decoder_initial_state = latent_dec(latent_vector)
 
         bucket_outputs, _ = decoder(decoder_initial_state, decoder_inputs[:bucket[1]])
@@ -927,8 +896,7 @@ def variational_decoder_with_buckets(means, logvars, decoder_inputs,
               outputs[-1], targets[:bucket[1]], weights[:bucket[1]],
               softmax_loss_function=softmax_loss_function))
 
-<<<<<<< HEAD
-  return outputs, losses, KL_divergences
+  return outputs, losses, KL_objs, KL_costs
 
 
 def variational_beam_decoder_with_buckets(means, logvars, decoder_inputs,
@@ -956,11 +924,7 @@ def variational_beam_decoder_with_buckets(means, logvars, decoder_inputs,
     for j, bucket in enumerate(buckets):
       with variable_scope.variable_scope(variable_scope.get_variable_scope(),
                                            reuse=True if j > 0 else None):
-        if iaf:
-          latent_vector, kl_cost = sample(means[j], logvars[j])
-        else:
-          latent_vector = sample(means[j], logvars[j])
-          kl_cost = kl_f(means[j], logvars[j])
+        latent_vector, kl_cost = sample(means[j], logvars[j])
         decoder_initial_state = latent_dec(latent_vector)
 
         bucket_outputs, _, beam_path, beam_symbol = decoder(decoder_initial_state, decoder_inputs[:bucket[1]])

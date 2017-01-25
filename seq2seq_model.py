@@ -130,10 +130,6 @@ class Seq2SeqModel(object):
 
       def sampled_loss(inputs, labels):
         labels = tf.reshape(labels, [-1, 1])
-        # We need to compute the sampled_softmax_loss using 32bit floats to
-        # avoid numerical instabilities.
-        local_w_t = tf.cast(w_t, tf.float32)
-        local_b = tf.cast(b, tf.float32)
         local_inputs = tf.cast(inputs, tf.float32)
         return tf.cast(
             tf.nn.sampled_softmax_loss(local_w_t, local_b, local_inputs, labels,
@@ -144,20 +140,20 @@ class Seq2SeqModel(object):
     single_cell = tf.nn.rnn_cell.GRUCell(size)
     if use_lstm:
       single_cell = tf.nn.rnn_cell.BasicLSTMCell(size)
+
     cell = single_cell
-    if num_layers > 1:
-      cell = tf.nn.rnn_cell.MultiRNNCell([single_cell] * num_layers)
 
     def encoder_f(encoder_inputs):
       return seq2seq.embedding_encoder(
           encoder_inputs,
           cell,
-          embedding=self.enc_embedding,
-          num_symbols=source_vocab_size,
-          embedding_size=size,
-          bidirectional=bidirectional,
-          weight_initializer=weight_initializer,
-          dtype=dtype)
+          embedding,
+          num_symbols,
+          embedding_size,
+          bidirectional=False,
+          dtype=None,
+          weight_initializer=None,
+          scope=None)
 
     def decoder_f(encoder_state, decoder_inputs):
       return seq2seq.embedding_rnn_decoder(
@@ -182,35 +178,16 @@ class Seq2SeqModel(object):
            use_lstm=use_lstm,
            dtype=dtype)
 
-    def lower_bounded_kl_f(mean, logvar):
-      return seq2seq.lower_bounded_KL_divergence(
-        mean, logvar, self.Lambda)
-
-    def iaf_sample_f(means, logvars):
-      return seq2seq.iaf_sample(
-        means, logvars, latent_dim, self.Lambda, dtype=dtype)
-
-    def enc_latent_f(encoder_state):
-      return seq2seq.encoder_to_latent(encoder_state,
-                     embedding_size=size,
-                     latent_dim=latent_dim,
-                     num_layers=num_layers,
-                     activation=activation,
-                     use_lstm=use_lstm,
-                     mean_logvar_split=mean_logvar_split,
-                     enc_state_bidirectional=bidirectional,
-                     dtype=dtype)
 
     def sample_f(mean, logvar):
       return seq2seq.sample(
-        mean, logvar,
-        batch_size=batch_size,
-        latent_dim=latent_dim,
+        mean, logva b
+        ze=batc latent__fdim=latent_dim,
         dtype=dtype)
 
     # The seq2seq function: we use embedding for the input and attention.
     def seq2seq_f(encoder_inputs, decoder_inputs, do_decode):
-      return tf.nn.seq2seq.embedding_attention_seq2seq(
+      return tf.nn.seq2seq.embedding_attention_seq2seq_f(
           encoder_inputs,
           decoder_inputs,
           cell,
@@ -230,38 +207,19 @@ class Seq2SeqModel(object):
       self.encoder_inputs.append(tf.placeholder(tf.int32, shape=[None],
                                                 name="encoder{0}".format(i)))
     for i in xrange(buckets[-1][1] + 1):
-      self.decoder_inputs.append(tf.placeholder(tf.int32, shape=[None],
-                                                name="decoder{0}".format(i)))
-      self.target_weights.append(tf.placeholder(dtype, shape=[None],
-                                                name="weight{0}".format(i)))
 
-    # Our targets are decoder inputs shifted by one.
-    targets = [self.decoder_inputs[i + 1]
-               for i in xrange(len(self.decoder_inputs) - 1)]
 
-    if iaf:
-      sample_f = iaf_sample_f
-
-    if not lower_bound_KL:
-      kl_f = seq2seq.KL_divergence
-    else:
-      kl_f = lower_bounded_kl_f
-
-    decoder = decoder_f
-    # Training outputs and losses.
-    if dnn_in_between:
       self.means, self.logvars = seq2seq.variational_encoder_with_buckets(
           self.encoder_inputs, buckets, encoder_f, enc_latent_f,
           softmax_loss_function=softmax_loss_function)
       self.outputs, self.losses, self.KL_objs, self.KL_costs = seq2seq.variational_decoder_with_buckets(
           self.means, self.logvars, self.decoder_inputs, targets,
-          self.target_weights, buckets, decoder,
-          latent_dec_f, kl_f, sample_f, iaf,
-          softmax_loss_function=softmax_loss_function)
+          self.target_weights, buckets, decoder_f, latent_dec_f,
+          sample_f, softmax_loss_function=softmax_loss_function)
     else:
       self.outputs, self.losses = seq2seq.autoencoder_with_buckets(
           self.encoder_inputs, self.decoder_inputs, targets,
-          self.target_weights, buckets, encoder_f, decoder,
+          self.target_weights, buckets, encoder_f, decoder_f,
           softmax_loss_function=softmax_loss_function)
     # If we use output projection, we need to project outputs for decoding.
     if output_projection is not None:
@@ -284,29 +242,19 @@ class Seq2SeqModel(object):
         clipped_gradients, norm = tf.clip_by_global_norm(gradients,
                                                          max_gradient_norm)
         self.gradient_norms.append(norm)
-        self.updates.append(optimizer.apply_gradients(
-          zip(clipped_gradients, params), global_step=self.global_step))
-
-    self.saver = tf.train.Saver(tf.global_variables())
-
-
-
-  
-  def step(self, session, encoder_inputs, decoder_inputs, target_weights,
            bucket_id, forward_only, beam_size=1):
     """Run a step of the model feeding the given inputs.
 
     Args:
       session: tensorflow session to use.
       encoder_inputs: list of numpy int vectors to feed as encoder inputs.
-      decoder_inputs: list of numpy int vectors to feed as decoder inputs.
-      target_weights: list of numpy float vectors to feed as target weights.
-      bucket_id: which bucket of the model to use.
+      decoder_inputs: list of numpy int vectors to feed as decoder inpu target_weights: list of numpy float vectors to fe
+      arget  bucket_id: which bucket of th_fe model to use.
       forward_only: whether to do the backward step or only forward.
 
     Returns:
       A triple consisting of gradient norm (or None if we did not do backward),
-      average perplexity, and the outputs.
+      average perplexity, and the outputs_f.
 
     Raises:
       ValueError: if length of encoder_inputs, decoder_inputs, or
