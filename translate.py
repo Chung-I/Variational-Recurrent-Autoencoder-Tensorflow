@@ -231,6 +231,10 @@ def train(config, encode_decode_config, interp_config):
           train_set, bucket_id)
       _, step_loss, step_KL_loss, _ = model.step(sess, encoder_inputs, decoder_inputs,
                                    target_weights, bucket_id, False)
+      if config.anneal:
+        if model.global_step.eval() > config.kl_rate_rise_time and
+        model.kl_rate < 1:
+        sess.run(model.kl_rate_increase_op)
       step_time += (time.time() - start_time) / config.steps_per_checkpoint
       step_loss_summaries.append(tf.Summary(value=[tf.Summary.Value(tag="step loss", simple_value=float(step_loss))]))
       step_KL_loss_summaries.append(tf.Summary(value=[tf.Summary.Value(tag="KL step loss", simple_value=float(step_KL_loss))]))

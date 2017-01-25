@@ -112,6 +112,8 @@ class Seq2SeqModel(object):
 
     self.dec_embedding = tf.get_variable("dec_embedding", [target_vocab_size, size], dtype=dtype, initializer=weight_initializer())
 
+    self.kl_rate_increase_op = self.kl_rate.assign(self.kl_rate + kl_rate_rise_factor)
+
     self.replace_input = None
     replace_input = None
     if word_dropout_keep_prob < 1:  #feed UNK if word dropout keep rate less than 1
@@ -189,7 +191,7 @@ class Seq2SeqModel(object):
            iaf,
            Lambda,
            anneal,
-           kl_rate,
+           self.kl_rate,
            dtype)
 
     # The seq2seq function: we use embedding for the input and attention.
@@ -318,10 +320,7 @@ def step(self, session, encoder_inputs, decoder_inputs, target_weights,
   if not forward_only:
     return outputs[1], outputs[2], outputs[3], None  # Gradient norm, loss, KL divergence, no outputs.
   else:
-    if beam_size > 1:
-      return outputs[0], outputs[1], outputs[2:]
-    else:
-      return None, outputs[0], outputs[1], outputs[2:]  # no gradient norm, loss, KL divergence, outputs.
+    return None, outputs[0], outputs[1], outputs[2:]  # no gradient norm, loss, KL divergence, outputs.
 
 
   def encode_to_latent(self, session, encoder_inputs, bucket_id):
