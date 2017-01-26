@@ -10,7 +10,6 @@
     "batch_norm": false,
     "use_lstm": false,
     "mean_logvar_split": false,
-    "elu": true,
     "buckets": [[8,9]],
     "beam_size": 0,
     "bidirectional": false,
@@ -19,7 +18,7 @@
     "max_gradient_norm": 5.0,
     "batch_size": 256,
     "kl_rate_rise_time": 50000,
-    "Lambda": 256,
+    "Lambda": 4,
     "latent_splits": 16,
     "max_train_data_size": 0,
     "steps_per_checkpoint": 2000,
@@ -33,7 +32,9 @@
     "load_embeddings": false,
     "Lambda_annealing": false,
     "probabilistic": true,
-    "orthogonal_initializer": true
+    "orthogonal_initializer": true,
+    "iaf": true,
+    "activation": "prelu"
   },
   "encode_decode": {
     "size": 256,
@@ -46,7 +47,6 @@
     "batch_norm": false,
     "use_lstm": false,
     "mean_logvar_split": false,
-    "elu": true,
     "buckets": [[8,9]],
     "beam_size": 0,
     "bidirectional": false,
@@ -55,7 +55,7 @@
     "max_gradient_norm": 5.0,
     "batch_size": 1,
     "kl_rate_rise_time": 50000,
-    "Lambda": 256,
+    "Lambda": 4,
     "latent_splits": 16,
     "max_train_data_size": 0,
     "steps_per_checkpoint": 2000,
@@ -69,7 +69,9 @@
     "load_embeddings": false,
     "Lambda_annealing": false,
     "probabilistic": false,
-    "orthogonal_initializer": true
+    "orthogonal_initializer": true,
+    "iaf": true,
+    "activation": "prelu"
   },
   "interpolate": {
     "size": 256,
@@ -82,7 +84,6 @@
     "batch_norm": false,
     "use_lstm": false,
     "mean_logvar_split": false,
-    "elu": true,
     "buckets": [[8,9]],
     "beam_size": 0,
     "bidirectional": false,
@@ -91,7 +92,7 @@
     "max_gradient_norm": 5.0,
     "batch_size": 1,
     "kl_rate_rise_time": 50000,
-    "Lambda": 256,
+    "Lambda": 4,
     "latent_splits": 16,
     "max_train_data_size": 0,
     "steps_per_checkpoint": 2000,
@@ -105,6 +106,8 @@
     "load_embeddings": false,
     "Lambda_annealing": false,
     "probabilistic": false,
-    "orthogonal_initializer": true
+    "orthogonal_initializer": true,
+    "iaf": true,
+    "activation": "prelu"
   }
 }
