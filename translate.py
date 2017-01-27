@@ -51,7 +51,8 @@ from tensorflow.python.platform import gfile
 tf.app.flags.DEFINE_string("model_dir", "models/example", "directory of the model.")
 tf.app.flags.DEFINE_boolean("new", True, "whether this is a new model or not.")
 tf.app.flags.DEFINE_string("do", "train", "what to do. accepts train, interpolate, sample, and decode.")
-tf.app.flags.DEFINE_string("input_file", None, "what to do. accepts train, interpolate, sample, and decode.")
+tf.app.flags.DEFINE_string("input_file", None, "input filename for encode_decode sample, and interpolate.")
+tf.app.flags.DEFINE_string("output_file", None, "output filename for encode_decode sample, and interpolate.")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -59,30 +60,6 @@ def prelu(x):
   with tf.variable_scope("prelu") as scope:
     alphas = tf.get_variable("alphas", [], initializer=tf.constant_initializer(0.0), dtype=tf.float32)
     return tf.nn.relu(x) - tf.mul(alphas, tf.nn.relu(-x))
-
-
-def maybe_create_statistics(config):
-  stat_file_name = "stats/" + FLAGS.model_name + ".json" 
-  if FLAGS.new:
-    if os.path.exists(stat_file_name):
-      print("error: create an already existed statistics file")
-      sys.exit()
-    stats = {}
-    stats['hyperparameters'] = config.__dict__
-    stats['model_name'] = FLAGS.model_dir
-    stats['train_perplexity'] = {}
-    stats['train_KL_divergence'] = {}
-    stats['eval_KL_divergence'] = {}
-    stats['eval_perplexity'] = {}
-    stats['wall_time'] = {}
-    with open(stat_file_name, "w") as statfile:
-      statfile.write(json.dumps(stats))
-  else:
-    with open(stat_file_name, "r") as statfile:
-      statjson = statfile.read()
-      stats = json.loads(statjson)
-      hparams = stats['hyperparameters']
-  return stats
 
 
 # We use a number of buckets and pad to the closest one for efficiency.
@@ -176,7 +153,7 @@ def create_model(session, config, forward_only):
   return model
 
 
-def train(config, encode_decode_config, interp_config):
+def train(config):
   """Train a en->fr translation model using WMT data."""
   # Prepare WMT data.
   print("Preparing WMT data in %s" % config.data_dir)
@@ -308,19 +285,6 @@ def train(config, encode_decode_config, interp_config):
         dev_writer.add_summary(eval_KL_loss_summary, current_step)
 
 
-        outputs = encode_interpolate(sess, model, interp_config)
-        with gfile.GFile(FLAGS.model_dir + "/{0}.{1}.{2}".format(FLAGS.model_name,current_step, interp_config.input_file), "w") as interp_file:
-          for output in outputs:
-            interp_file.write(output)
-
-        outputs = encode_decode(sess, model, encode_decode_config)
-        with gfile.GFile(FLAGS.model_dir + "/{0}.{1}.{2}".format(FLAGS.model_name, current_step, encode_decode_config.input_file), "w") as enc_dec_file:
-          for output in outputs:
-            enc_dec_file.write(output)
-
-        model.batch_size = config.batch_size
-
-
 def encode_decode(sess, model, config):
   model.batch_size = 1  # We decode one sentence at a time.
   model.probabilistic = config.probabilistic
@@ -336,9 +300,9 @@ def encode_decode(sess, model, config):
 
   # Decode from standard input.
   outputs = []
-  with gfile.GFile(config.input_file, "r") as fs:
+  with gfile.GFile(FLAGS.input_file, "r") as fs:
     sentences = fs.readlines()
-  with gfile.GFile(FLAGS.model_dir + ".output.txt", "w") as fo:
+  with gfile.GFile(FLAGS.output_file, "w") as fo:
     for i, sentence in  enumerate(sentences):
       # Get token-ids for the input sentence.
       token_ids = data_utils.sentence_to_token_ids(sentence, en_vocab)
@@ -455,7 +419,7 @@ def n_sample(sess, model, sentence, num_sample):
   neg_inf_logvar = np.full(logvar.shape, -800.0, dtype=np.float32)
   logvars = [neg_inf_logvar] + [logvar] * (num_sample - 1)
   outputs = decode(sess, model, means, logvars, len(config.buckets) - 1)
-  with gfile.GFile(FLAGS.model_dir + ".{0}_sample.txt".format(num_sample), "w") as fo:
+  with gfile.GFile(FLAGS.output_file, "w") as fo:
     for output in outputs:
       fo.write(output)
   
@@ -481,11 +445,7 @@ def interpolate(sess, model, config, means, logvars, num_pts):
   return outputs
 
 def encode_interpolate(sess, model, config):
-  if FLAGS.input_file:
-    input_fname = FLAGS.input_file
-  else:
-    input_fname = config.input_file
-  with gfile.GFile(input_fname, "r") as fs:
+  with gfile.GFile(FLAGS.input_file, "r") as fs:
     sentences = fs.readlines()
   model.batch_size = 1
   model.probabilistic = config.probabilistic
@@ -527,19 +487,18 @@ def main(_):
     with tf.Session() as sess:
       model = create_model(sess, enc_dec_config, True)
       outputs = encode_decode(sess, model, enc_dec_config)
-    with gfile.GFile(os.path.join(FLAGS.model_dir, "encode_decode.txt"), "w") as enc_dec_f:
+    with gfile.GFile(FLAGS.output_file, "w") as enc_dec_f:
       for output in outputs:
         enc_dec_f.write(output)
   elif FLAGS.do == "interpolate":
     with tf.Session() as sess:
       model = create_model(sess, interp_config, True)
       outputs = encode_interpolate(sess, model, interp_config)
-    with gfile.GFile(os.path.join(FLAGS.model_dir, "interpolate.txt"), "w") as interp_f:
+    with gfile.GFile(FLAGS.output_file, "w") as interp_f:
       for output in outputs:
         interp_f.write(output)
   elif FLAGS.do == "train":
-    print(config)
-    train(config, enc_dec_config, interp_config)
+    train(config)
 
 if __name__ == "__main__":
   tf.app.run()
