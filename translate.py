@@ -43,7 +43,7 @@ import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
-import data_utils
+import utils.data_utils
 import seq2seq_model
 import h5py
 from tensorflow.python.platform import gfile
@@ -302,57 +302,58 @@ def encode_decode(sess, model, config):
   outputs = []
   with gfile.GFile(FLAGS.input_file, "r") as fs:
     sentences = fs.readlines()
-  with gfile.GFile(FLAGS.output_file, "w") as fo:
-    for i, sentence in  enumerate(sentences):
-      # Get token-ids for the input sentence.
-      token_ids = data_utils.sentence_to_token_ids(sentence, en_vocab)
-      # Which bucket does it belong to?
-      bucket_id = len(config.buckets) - 1
-      for i, bucket in enumerate(config.buckets):
-        if bucket[0] >= len(token_ids):
-          bucket_id = i
-          break
-      else:
-        logging.warning("Sentence truncated: %s", sentence) 
+  for i, sentence in  enumerate(sentences):
+    # Get token-ids for the input sentence.
+    token_ids = data_utils.sentence_to_token_ids(sentence, en_vocab)
+    # Which bucket does it belong to?
+    bucket_id = len(config.buckets) - 1
+    for i, bucket in enumerate(config.buckets):
+      if bucket[0] >= len(token_ids):
+        bucket_id = i
+        break
+    else:
+      logging.warning("Sentence truncated: %s", sentence) 
 
-      encoder_inputs, decoder_inputs, target_weights = model.get_batch(
-          {bucket_id: [(token_ids, [])]}, bucket_id)
+    encoder_inputs, decoder_inputs, target_weights = model.get_batch(
+        {bucket_id: [(token_ids, [])]}, bucket_id)
 
-      if beam_size > 1:
-        path, symbol, output_logits = model.step(sess, encoder_inputs, decoder_inputs,
-                target_weights, bucket_id, True, config.probabilistic, beam_size)
+    if beam_size > 1:
+      path, symbol, output_logits = model.step(sess, encoder_inputs, decoder_inputs,
+              target_weights, bucket_id, True, config.probabilistic, beam_size)
 
-        k = output_logits[0]
-        paths = []
+      k = output_logits[0]
+      paths = []
+      for kk in range(beam_size):
+        paths.append([])
+      curr = range(beam_size)
+      num_steps = len(path)
+      for i in range(num_steps-1, -1, -1):
         for kk in range(beam_size):
-          paths.append([])
-        curr = range(beam_size)
-        num_steps = len(path)
-        for i in range(num_steps-1, -1, -1):
-          for kk in range(beam_size):
-            paths[kk].append(symbol[i][curr[kk]])
-            curr[kk] = path[i][curr[kk]]
-        recos = set()
-        for kk in range(beam_size):
-          output = [int(logit)  for logit in paths[kk][::-1]]
+          paths[kk].append(symbol[i][curr[kk]])
+          curr[kk] = path[i][curr[kk]]
+      recos = set()
+      for kk in range(beam_size):
+        output = [int(logit)  for logit in paths[kk][::-1]]
 
-          if EOS_ID in output:
-            output = output[:output.index(EOS_ID)]
-          output = " ".join([rev_fr_vocab[word] for word in output]) + "\n"
-          outputs.append(output)
-
-      else:
-      # Get output logits for the sentence.
-        _, _, _, output_logits = model.step(sess, encoder_inputs, decoder_inputs,
-                                         target_weights, bucket_id, True, config.probabilistic)
-        # This is a greedy decoder - outputs are just argmaxes of output_logits.
-        output = [int(np.argmax(logit, axis=1)) for logit in output_logits]
-        # If there is an EOS symbol in outputs, cut them at that point.
-        if data_utils.EOS_ID in output:
-          output = output[:output.index(data_utils.EOS_ID)]
+        if EOS_ID in output:
+          output = output[:output.index(EOS_ID)]
         output = " ".join([rev_fr_vocab[word] for word in output]) + "\n"
         outputs.append(output)
-  return outputs
+
+    else:
+    # Get output logits for the sentence.
+      _, _, _, output_logits = model.step(sess, encoder_inputs, decoder_inputs,
+                                       target_weights, bucket_id, True, config.probabilistic)
+      # This is a greedy decoder - outputs are just argmaxes of output_logits.
+      output = [int(np.argmax(logit, axis=1)) for logit in output_logits]
+      # If there is an EOS symbol in outputs, cut them at that point.
+      if data_utils.EOS_ID in output:
+        output = output[:output.index(data_utils.EOS_ID)]
+      output = " ".join([rev_fr_vocab[word] for word in output]) + "\n"
+      outputs.append(output)
+  with gfile.GFile(FLAGS.output_file, "w") as enc_dec_f:
+    for output in outputs:
+      enc_dec_f.write(output)
 
 
 def encode(sess, model, config, sentences):
@@ -411,17 +412,19 @@ def decode(sess, model, config, means, logvars, bucket_id):
   return outputs
   # Print out French sentence corresponding to outputs.
 
-def n_sample(sess, model, sentence, num_sample):
-  mean, logvar = encode(sess, model, [sentence])
+def n_sample(sess, model,cofig):
+  with gfile.GFile(FLAGS.input_file, "r") as fs:
+    sentences = fs.readlines()
+  mean, logvar = encode(sess, model, config, sentences)
   mean = mean[0][0][0]
   logvar = logvar[0][0][0]
   means = [mean] * num_sample
   neg_inf_logvar = np.full(logvar.shape, -800.0, dtype=np.float32)
   logvars = [neg_inf_logvar] + [logvar] * (num_sample - 1)
   outputs = decode(sess, model, means, logvars, len(config.buckets) - 1)
-  with gfile.GFile(FLAGS.output_file, "w") as fo:
+  with gfile.GFile(FLAGS.output_file, "w") as sample_f:
     for output in outputs:
-      fo.write(output)
+      sample_f.write(output)
   
 
 def interpolate(sess, model, config, means, logvars, num_pts):
@@ -451,7 +454,9 @@ def encode_interpolate(sess, model, config):
   model.probabilistic = config.probabilistic
   means, logvars = encode(sess, model, config, sentences)
   outputs = interpolate(sess, model, config, means, logvars, config.num_pts)
-  return outputs
+  with gfile.GFile(FLAGS.output_file, "w") as interp_f:
+    for output in outputs:
+      interp_f.write(output)
 
 class Struct(object):
   def __init__(self, **entries):
@@ -462,6 +467,8 @@ class Struct(object):
       self.__dict__.update({ "max_gradient_norm": 5.0 })
     if not self.__dict__.get("load_embeddings"):
       self.__dict__.update({ "load_embeddings": False })
+    if not self.__dict__.get("batch_size"):
+      self.__dict__.update({ "batch_size": 1 })
   def update(self, **entries):
     self.__dict__.update(entries)
 
@@ -486,17 +493,15 @@ def main(_):
   if FLAGS.do == "encode_decode":
     with tf.Session() as sess:
       model = create_model(sess, enc_dec_config, True)
-      outputs = encode_decode(sess, model, enc_dec_config)
-    with gfile.GFile(FLAGS.output_file, "w") as enc_dec_f:
-      for output in outputs:
-        enc_dec_f.write(output)
+      encode_decode(sess, model, enc_dec_config)
   elif FLAGS.do == "interpolate":
     with tf.Session() as sess:
       model = create_model(sess, interp_config, True)
-      outputs = encode_interpolate(sess, model, interp_config)
-    with gfile.GFile(FLAGS.output_file, "w") as interp_f:
-      for output in outputs:
-        interp_f.write(output)
+      encode_interpolate(sess, model, interp_config)
+  elif FLAGS.do == "sample":
+    with tf.Session() as sess:
+      model = create_model(sess, sample_config, True)
+      n_sample(sess, model, config)
   elif FLAGS.do == "train":
     train(config)
 

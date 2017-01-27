@@ -73,37 +73,6 @@ def gunzip_file(gz_path, new_path):
         new_file.write(line)
 
 
-def get_wmt_enfr_train_set(directory):
-  """Download the WMT en-fr training corpus to directory unless it's there."""
-  train_path = os.path.join(directory, "giga-fren.release2.fixed")
-  if not (gfile.Exists(train_path +".fr") and gfile.Exists(train_path +".en")):
-    corpus_file = maybe_download(directory, "training-giga-fren.tar",
-                                 _WMT_ENFR_TRAIN_URL)
-    print("Extracting tar file %s" % corpus_file)
-    with tarfile.open(corpus_file, "r") as corpus_tar:
-      corpus_tar.extractall(directory)
-    gunzip_file(train_path + ".fr.gz", train_path + ".fr")
-    gunzip_file(train_path + ".en.gz", train_path + ".en")
-  return train_path
-
-
-def get_wmt_enfr_dev_set(directory):
-  """Download the WMT en-fr training corpus to directory unless it's there."""
-  dev_name = "newstest2013"
-  dev_path = os.path.join(directory, dev_name)
-  if not (gfile.Exists(dev_path + ".fr") and gfile.Exists(dev_path + ".en")):
-    dev_file = maybe_download(directory, "dev-v2.tgz", _WMT_ENFR_DEV_URL)
-    print("Extracting tgz file %s" % dev_file)
-    with tarfile.open(dev_file, "r:gz") as dev_tar:
-      fr_dev_file = dev_tar.getmember("dev/" + dev_name + ".fr")
-      en_dev_file = dev_tar.getmember("dev/" + dev_name + ".en")
-      fr_dev_file.name = dev_name + ".fr"  # Extract without "dev/" prefix.
-      en_dev_file.name = dev_name + ".en"
-      dev_tar.extract(fr_dev_file, directory)
-      dev_tar.extract(en_dev_file, directory)
-  return dev_path
-
-
 def basic_tokenizer(sentence):
   """Very basic tokenizer: split the sentence into a list of tokens."""
   words = []
@@ -268,18 +237,16 @@ def prepare_wmt_data(data_dir, en_vocabulary_size, fr_vocabulary_size,
       (6) path to the French vocabulary file.
   """
   # Get wmt data to the specified directory.
-  #train_path = get_wmt_enfr_train_set(data_dir)
-  #dev_path = get_wmt_enfr_dev_set(data_dir)
   train_path = os.path.join(data_dir, "train.txt")
   dev_path = os.path.join(data_dir, "dev.txt")
 
   # Create vocabularies of the appropriate sizes.
-  fr_vocab_path = os.path.join(data_dir, "vocab%d.fr" % fr_vocabulary_size)
-  en_vocab_path = os.path.join(data_dir, "vocab%d.en" % en_vocabulary_size)
-  create_vocabulary(fr_vocab_path, train_path + ".fr", fr_vocabulary_size,
+  fr_vocab_path = os.path.join(data_dir, "vocab%d.out" % fr_vocabulary_size)
+  en_vocab_path = os.path.join(data_dir, "vocab%d.in" % en_vocabulary_size)
+  create_vocabulary(fr_vocab_path, train_path + ".out", fr_vocabulary_size,
           os.path.join(data_dir, "dec_embedding{0}.tsv".format(fr_vocabulary_size)),
           tokenizer)
-  create_vocabulary(en_vocab_path, train_path + ".en", en_vocabulary_size,
+  create_vocabulary(en_vocab_path, train_path + ".in", en_vocabulary_size,
           os.path.join(data_dir, "enc_embedding{0}.tsv".format(en_vocabulary_size)),
           tokenizer)
   if load_embeddings:
@@ -288,16 +255,16 @@ def prepare_wmt_data(data_dir, en_vocabulary_size, fr_vocabulary_size,
     
 
   # Create token ids for the training data.
-  fr_train_ids_path = train_path + (".ids%d.fr" % fr_vocabulary_size)
-  en_train_ids_path = train_path + (".ids%d.en" % en_vocabulary_size)
-  data_to_token_ids(train_path + ".fr", fr_train_ids_path, fr_vocab_path, tokenizer)
-  data_to_token_ids(train_path + ".en", en_train_ids_path, en_vocab_path, tokenizer)
+  fr_train_ids_path = train_path + (".ids%d.out" % fr_vocabulary_size)
+  en_train_ids_path = train_path + (".ids%d.in" % en_vocabulary_size)
+  data_to_token_ids(train_path + ".out", fr_train_ids_path, fr_vocab_path, tokenizer)
+  data_to_token_ids(train_path + ".in", en_train_ids_path, en_vocab_path, tokenizer)
 
   # Create token ids for the development data.
-  fr_dev_ids_path = dev_path + (".ids%d.fr" % fr_vocabulary_size)
-  en_dev_ids_path = dev_path + (".ids%d.en" % en_vocabulary_size)
-  data_to_token_ids(dev_path + ".fr", fr_dev_ids_path, fr_vocab_path, tokenizer)
-  data_to_token_ids(dev_path + ".en", en_dev_ids_path, en_vocab_path, tokenizer)
+  fr_dev_ids_path = dev_path + (".ids%d.out" % fr_vocabulary_size)
+  en_dev_ids_path = dev_path + (".ids%d.in" % en_vocabulary_size)
+  data_to_token_ids(dev_path + ".out", fr_dev_ids_path, fr_vocab_path, tokenizer)
+  data_to_token_ids(dev_path + ".in", en_dev_ids_path, en_vocab_path, tokenizer)
 
   return (en_train_ids_path, fr_train_ids_path,
           en_dev_ids_path, fr_dev_ids_path,
