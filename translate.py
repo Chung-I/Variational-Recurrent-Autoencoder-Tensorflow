@@ -43,12 +43,12 @@ import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
-import utils.data_utils
+import utils.data_utils as data_utils
 import seq2seq_model
 import h5py
 from tensorflow.python.platform import gfile
 
-tf.app.flags.DEFINE_string("model_dir", "models/example", "directory of the model.")
+tf.app.flags.DEFINE_string("model_dir", "models", "directory of the model.")
 tf.app.flags.DEFINE_boolean("new", True, "whether this is a new model or not.")
 tf.app.flags.DEFINE_string("do", "train", "what to do. accepts train, interpolate, sample, and decode.")
 tf.app.flags.DEFINE_string("input_file", None, "input filename for encode_decode sample, and interpolate.")
@@ -292,9 +292,9 @@ def encode_decode(sess, model, config):
 
   # Load vocabularies.
   en_vocab_path = os.path.join(config.data_dir,
-                               "vocab%d.en" % config.en_vocab_size)
+                               "vocab%d.in" % config.en_vocab_size)
   fr_vocab_path = os.path.join(config.data_dir,
-                               "vocab%d.fr" % config.fr_vocab_size)
+                               "vocab%d.out" % config.fr_vocab_size)
   en_vocab, _ = data_utils.initialize_vocabulary(en_vocab_path)
   _, rev_fr_vocab = data_utils.initialize_vocabulary(fr_vocab_path)
 
@@ -359,9 +359,9 @@ def encode_decode(sess, model, config):
 def encode(sess, model, config, sentences):
   # Load vocabularies.
   en_vocab_path = os.path.join(config.data_dir,
-                               "vocab%d.en" % config.en_vocab_size)
+                               "vocab%d.in" % config.en_vocab_size)
   fr_vocab_path = os.path.join(config.data_dir,
-                               "vocab%d.fr" % config.fr_vocab_size)
+                               "vocab%d.out" % config.fr_vocab_size)
   en_vocab, _ = data_utils.initialize_vocabulary(en_vocab_path)
   _, rev_fr_vocab = data_utils.initialize_vocabulary(fr_vocab_path)
   
@@ -392,7 +392,7 @@ def encode(sess, model, config, sentences):
 
 def decode(sess, model, config, means, logvars, bucket_id):
   fr_vocab_path = os.path.join(config.data_dir,
-                               "vocab%d.fr" % config.fr_vocab_size)
+                               "vocab%d.out" % config.fr_vocab_size)
   _, rev_fr_vocab = data_utils.initialize_vocabulary(fr_vocab_path)
 
   _, decoder_inputs, target_weights = model.get_batch(
@@ -454,8 +454,10 @@ def encode_interpolate(sess, model, config):
   model.probabilistic = config.probabilistic
   means, logvars = encode(sess, model, config, sentences)
   outputs = interpolate(sess, model, config, means, logvars, config.num_pts)
+  print(outputs)
   with gfile.GFile(FLAGS.output_file, "w") as interp_f:
     for output in outputs:
+      print(output)
       interp_f.write(output)
 
 class Struct(object):
@@ -469,6 +471,10 @@ class Struct(object):
       self.__dict__.update({ "load_embeddings": False })
     if not self.__dict__.get("batch_size"):
       self.__dict__.update({ "batch_size": 1 })
+    if not self.__dict__.get("learning_rate"):
+      self.__dict__.update({ "learning_rate": 0.001 })
+    if not self.__dict__.get("anneal"):
+      self.__dict__.update({ "anneal": False })
   def update(self, **entries):
     self.__dict__.update(entries)
 

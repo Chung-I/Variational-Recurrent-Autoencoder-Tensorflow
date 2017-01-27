@@ -25,7 +25,7 @@ import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
-import data_utils
+import utils.data_utils as data_utils
 import seq2seq
 import pdb
 from tensorflow.python.ops import variable_scope
@@ -265,7 +265,7 @@ class Seq2SeqModel(object):
         self.updates.append(optimizer.apply_gradients(
             zip(clipped_gradients, params), global_step=self.global_step))
 
-        self.saver = tf.train.Saver(tf.global_variables())
+    self.saver = tf.train.Saver(tf.global_variables())
 
 
   def step(self, session, encoder_inputs, decoder_inputs, target_weights,

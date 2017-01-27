@@ -22,7 +22,7 @@ import gzip
 import os
 import re
 import tarfile
-import embed_utils
+from . import embed_utils
 
 from six.moves import urllib
 

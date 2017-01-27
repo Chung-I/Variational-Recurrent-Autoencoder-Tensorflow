@@ -4,7 +4,7 @@
     "latent_dim": 16,
     "en_vocab_size": 6000,
     "fr_vocab_size": 6000,
-    "data_dir": "corpus/line_based_7",
+    "data_dir": "corpus",
     "num_layers": 1,
     "use_lstm": false,
     "buckets": [[8,9]],
@@ -34,7 +34,7 @@
   },
   "sample": {
     "feed_previous": true,
-    "word_dropout_keep_prob": 0.0
+    "word_dropout_keep_prob": 0.0,
     "num_pts": 10
   },
   "interpolate": {
