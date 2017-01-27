@@ -309,12 +309,12 @@ def train(config, encode_decode_config, interp_config):
 
 
         outputs = encode_interpolate(sess, model, interp_config)
-        with gfile.GFile(FLAGS.model_dir + "/{0}.{1}.interpolate.txt".format(FLAGS.model_name,current_step), "w") as interp_file:
+        with gfile.GFile(FLAGS.model_dir + "/{0}.{1}.{2}".format(FLAGS.model_name,current_step, interp_config.input_file), "w") as interp_file:
           for output in outputs:
             interp_file.write(output)
 
         outputs = encode_decode(sess, model, encode_decode_config)
-        with gfile.GFile(FLAGS.model_dir + "/{0}.{1}.encode_decode.txt".format(FLAGS.model_name,current_step), "w") as enc_dec_file:
+        with gfile.GFile(FLAGS.model_dir + "/{0}.{1}.{2}".format(FLAGS.model_name, current_step, encode_decode_config.input_file), "w") as enc_dec_file:
           for output in outputs:
             enc_dec_file.write(output)
 
@@ -497,7 +497,9 @@ class Struct(object):
   def __init__(self, **entries):
     self.__dict__.update(entries)
     if not self.__dict__.get("Lambda"):
-      self.__dict__.Lambda = None
+      self.__dict__.update({ "Lambda": None })
+    if not self.__dict__.get("max_gradient_norm"):
+      self.__dict__.update({ "max_gradient_norm": 5.0 })
   def update(self, **entries)
     self.__dict__.update(entries)
 
