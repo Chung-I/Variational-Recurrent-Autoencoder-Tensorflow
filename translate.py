@@ -48,7 +48,7 @@ import seq2seq_model
 import h5py
 from tensorflow.python.platform import gfile
 
-tf.app.flags.DEFINE_string("model_dir", "input.txt", "directory of the model.")
+tf.app.flags.DEFINE_string("model_dir", "models/example", "directory of the model.")
 tf.app.flags.DEFINE_boolean("new", True, "whether this is a new model or not.")
 tf.app.flags.DEFINE_string("do", "train", "what to do. accepts train, interpolate, sample, and decode.")
 tf.app.flags.DEFINE_string("input_file", None, "what to do. accepts train, interpolate, sample, and decode.")
@@ -235,7 +235,7 @@ def train(config, encode_decode_config, interp_config):
 
       if config.anneal and model.global_step.eval() > config.kl_rate_rise_time and model.kl_rate < 1:
         new_kl_rate = model.kl_rate.eval() + config.kl_rate_rise_factor
-        sess.run(model.kl_rate_update, feed_dict{'new_kl_rate': new_kl_rate})
+        sess.run(model.kl_rate_update, feed_dict={'new_kl_rate': new_kl_rate})
 
       step_time += (time.time() - start_time) / config.steps_per_checkpoint
       step_loss_summaries.append(tf.Summary(value=[tf.Summary.Value(tag="step loss", simple_value=float(step_loss))]))
@@ -367,7 +367,7 @@ def encode_decode(sess, model, config):
         for i in range(num_steps-1, -1, -1):
           for kk in range(beam_size):
             paths[kk].append(symbol[i][curr[kk]])
-              curr[kk] = path[i][curr[kk]]
+            curr[kk] = path[i][curr[kk]]
         recos = set()
         for kk in range(beam_size):
           output = [int(logit)  for logit in paths[kk][::-1]]
@@ -500,7 +500,9 @@ class Struct(object):
       self.__dict__.update({ "Lambda": None })
     if not self.__dict__.get("max_gradient_norm"):
       self.__dict__.update({ "max_gradient_norm": 5.0 })
-  def update(self, **entries)
+    if not self.__dict__.get("load_embeddings"):
+      self.__dict__.update({ "load_embeddings": False })
+  def update(self, **entries):
     self.__dict__.update(entries)
 
 
@@ -515,11 +517,11 @@ def main(_):
     raise ValueError("argument \"do\" is not one of the following: train, interpolate, decode or sample.")
 
   config = Struct(**configs["model"])
-  config = config.update(Struct(**configs[FLAGS.do]))
+  config.update(**configs[FLAGS.do])
   interp_config = Struct(**configs["model"])
-  interp_config = interp_config.update(Struct(**configs["interpolate"]))
+  interp_config.update(**configs["interpolate"])
   enc_dec_config = Struct(**configs["model"])
-  enc_dec_config = enc_dec_config.update(Struct(**configs["encode_decode"]))
+  enc_dec_config.update(**configs["encode_decode"])
 
   if FLAGS.do == "encode_decode":
     with tf.Session() as sess:
@@ -536,6 +538,7 @@ def main(_):
       for output in outputs:
         interp_f.write(output)
   elif FLAGS.do == "train":
+    print(config)
     train(config, enc_dec_config, interp_config)
 
 if __name__ == "__main__":

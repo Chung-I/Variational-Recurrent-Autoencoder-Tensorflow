@@ -692,7 +692,6 @@ def encoder_to_latent(encoder_state,
                       num_layers,
                       activation=tf.nn.relu,
                       use_lstm=False,
-                      mean_logvar_split=False,
                       enc_state_bidirectional=False,
                       dtype=None):
   print(activation)
