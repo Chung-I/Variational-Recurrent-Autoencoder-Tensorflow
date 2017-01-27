@@ -130,7 +130,9 @@ def read_data(source_path, target_path, config, max_size=None):
 def create_model(session, config, forward_only):
   """Create translation model and initialize or load parameters in session."""
   dtype = tf.float32
-  optimizer = tf.train.AdamOptimizer(config.learning_rate)
+  optimizer = None
+  if not forward_only:
+    optimizer = tf.train.AdamOptimizer(config.learning_rate)
   if config.activation == "elu":
     activation = tf.nn.elu
   elif config.activation == "prelu":
@@ -154,13 +156,9 @@ def create_model(session, config, forward_only):
       config.Lambda,
       config.word_dropout_keep_prob,
       config.anneal,
-      config.lower_bound_KL,
-      config.kl_rate_rise_time,
-      config.kl_rate_rise_factor,
       config.use_lstm,
       optimizer=optimizer,
       activation=activation,
-      probabilistic=config.probabilistic,
       forward_only=forward_only,
       feed_previous=config.feed_previous,
       bidirectional=config.bidirectional,
@@ -192,6 +190,9 @@ def train(config, encode_decode_config, interp_config):
     # Create model.
     print("Creating %d layers of %d units." % (config.num_layers, config.size))
     model = create_model(sess, config, False)
+
+    if not config.probabilistic:
+      self.kl_rate_update(0.0)
 
     train_writer = tf.summary.FileWriter(FLAGS.model_dir+ "/train", graph=sess.graph)
     dev_writer = tf.summary.FileWriter(FLAGS.model_dir + "/test", graph=sess.graph)
@@ -230,11 +231,12 @@ def train(config, encode_decode_config, interp_config):
       encoder_inputs, decoder_inputs, target_weights = model.get_batch(
           train_set, bucket_id)
       _, step_loss, step_KL_loss, _ = model.step(sess, encoder_inputs, decoder_inputs,
-                                   target_weights, bucket_id, False)
-      if config.anneal:
-        if model.global_step.eval() > config.kl_rate_rise_time and
-        model.kl_rate < 1:
-        sess.run(model.kl_rate_increase_op)
+                                   target_weights, bucket_id, False, config.probabilistic)
+
+      if config.anneal and model.global_step.eval() > config.kl_rate_rise_time and model.kl_rate < 1:
+        new_kl_rate = model.kl_rate.eval() + config.kl_rate_rise_factor
+        sess.run(model.kl_rate_update, feed_dict{'new_kl_rate': new_kl_rate})
+
       step_time += (time.time() - start_time) / config.steps_per_checkpoint
       step_loss_summaries.append(tf.Summary(value=[tf.Summary.Value(tag="step loss", simple_value=float(step_loss))]))
       step_KL_loss_summaries.append(tf.Summary(value=[tf.Summary.Value(tag="KL step loss", simple_value=float(step_KL_loss))]))
@@ -285,7 +287,7 @@ def train(config, encode_decode_config, interp_config):
           encoder_inputs, decoder_inputs, target_weights = model.get_batch(
               dev_set, bucket_id)
           _, eval_loss, eval_KL_loss, _ = model.step(sess, encoder_inputs, decoder_inputs,
-                                       target_weights, bucket_id, True)
+                                       target_weights, bucket_id, True, config.probabilistic)
           eval_losses.append(float(eval_loss))
           eval_KL_losses.append(float(eval_KL_loss))
           eval_ppx = math.exp(float(eval_loss)) if eval_loss < 300 else float(
@@ -316,7 +318,6 @@ def train(config, encode_decode_config, interp_config):
           for output in outputs:
             enc_dec_file.write(output)
 
-        model.probabilistic = config.probabilistic
         model.batch_size = config.batch_size
 
 
@@ -355,7 +356,7 @@ def encode_decode(sess, model, config):
 
       if beam_size > 1:
         path, symbol, output_logits = model.step(sess, encoder_inputs, decoder_inputs,
-                target_weights, bucket_id, True, beam_size)
+                target_weights, bucket_id, True, config.probabilistic, beam_size)
 
         k = output_logits[0]
         paths = []
@@ -379,7 +380,7 @@ def encode_decode(sess, model, config):
       else:
       # Get output logits for the sentence.
         _, _, _, output_logits = model.step(sess, encoder_inputs, decoder_inputs,
-                                         target_weights, bucket_id, True)
+                                         target_weights, bucket_id, True, config.probabilistic)
         # This is a greedy decoder - outputs are just argmaxes of output_logits.
         output = [int(np.argmax(logit, axis=1)) for logit in output_logits]
         # If there is an EOS symbol in outputs, cut them at that point.
@@ -495,12 +496,10 @@ def encode_interpolate(sess, model, config):
 class Struct(object):
   def __init__(self, **entries):
     self.__dict__.update(entries)
-    if not self.__dict__.get("iaf"):
-      self.__dict__.update({ "iaf": False })
-    if not self.__dict__.get("adamax"):
-      self.__dict__.update({ "adamax": False })
-    if not self.__dict__.get('elu'):
-      self.__dict__.update({ "elu": False })
+    if not self.__dict__.get("Lambda"):
+      self.__dict__.Lambda = None
+  def update(self, **entries)
+    self.__dict__.update(entries)
 
 
 def main(_):
@@ -511,16 +510,19 @@ def main(_):
   FLAGS.model_name = os.path.basename(os.path.normpath(FLAGS.model_dir)) 
   behavior = ["train", "interpolate", "encode_decode", "sample"]
   if FLAGS.do not in behavior:
-    raise ValueError("argument \"do\" must be one of the following: train, interpolate, decode or sample.")
+    raise ValueError("argument \"do\" is not one of the following: train, interpolate, decode or sample.")
 
-  config = configs[FLAGS.do]
-  config = Struct(**config)
-  interp_config = Struct(**configs["interpolate"])
-  encode_decode_config = Struct(**configs["encode_decode"])
+  config = Struct(**configs["model"])
+  config = config.update(Struct(**configs[FLAGS.do]))
+  interp_config = Struct(**configs["model"])
+  interp_config = interp_config.update(Struct(**configs["interpolate"]))
+  enc_dec_config = Struct(**configs["model"])
+  enc_dec_config = enc_dec_config.update(Struct(**configs["encode_decode"]))
+
   if FLAGS.do == "encode_decode":
     with tf.Session() as sess:
-      model = create_model(sess, encode_decode_config, True)
-      outputs = encode_decode(sess, model, encode_decode_config)
+      model = create_model(sess, enc_dec_config, True)
+      outputs = encode_decode(sess, model, enc_dec_config)
     with gfile.GFile(os.path.join(FLAGS.model_dir, "encode_decode.txt"), "w") as enc_dec_f:
       for output in outputs:
         enc_dec_f.write(output)
@@ -532,7 +534,7 @@ def main(_):
       for output in outputs:
         interp_f.write(output)
   elif FLAGS.do == "train":
-    train(config, encode_decode_config, interp_config)
+    train(config, enc_dec_config, interp_config)
 
 if __name__ == "__main__":
   tf.app.run()

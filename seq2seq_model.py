@@ -58,14 +58,11 @@ class Seq2SeqModel(object):
                Lambda=2,
                word_dropout_keep_prob=1.0,
                anneal=False,
-               lower_bound_KL=True,
-               kl_rate_rise_time=None,
                kl_rate_rise_factor=None,
                use_lstm=False,
                num_samples=512,
                optimizer=None,
                activation=tf.nn.relu,
-               probabilistic=False,
                forward_only=False,
                feed_previous=True,
                bidirectional=False,
@@ -112,13 +109,11 @@ class Seq2SeqModel(object):
 
     self.dec_embedding = tf.get_variable("dec_embedding", [target_vocab_size, size], dtype=dtype, initializer=weight_initializer())
 
-    self.kl_rate_increase_op = self.kl_rate.assign(self.kl_rate + kl_rate_rise_factor)
+    self.new_kl_rate = tf.placeholder(tf.float32, shape=[], name="new_kl_rate")
+    self.kl_rate_update = tf.assign(self.kl_rate, self.new_kl_rate)
 
-    self.replace_input = None
-    replace_input = None
-    if word_dropout_keep_prob < 1:  #feed UNK if word dropout keep rate less than 1
-      self.replace_input = tf.placeholder(tf.int32, shape=[None], name="replace_input")
-      replace_input = tf.nn.embedding_lookup(self.dec_embedding, self.replace_input)
+    self.replace_input = tf.placeholder(tf.int32, shape=[None], name="replace_input")
+    replace_input = tf.nn.embedding_lookup(self.dec_embedding, self.replace_input)
 
     self.global_step = tf.Variable(0, trainable=False)
 
@@ -216,14 +211,23 @@ class Seq2SeqModel(object):
       self.encoder_inputs.append(tf.placeholder(tf.int32, shape=[None],
                                                 name="encoder{0}".format(i)))
     for i in xrange(buckets[-1][1] + 1):
+      self.decoder_inputs.append(tf.placeholder(tf.int32, shape=[None],
+                                                name="decoder{0}".format(i)))
+      self.target_weights.append(tf.placeholder(dtype, shape=[None],
+                                                name="weight{0}".format(i)))
 
-      self.means, self.logvars = seq2seq.variational_encoder_with_buckets(
-          self.encoder_inputs, buckets, encoder_f, enc_latent_f,
-          softmax_loss_function=softmax_loss_function)
-      self.outputs, self.losses, self.KL_objs, self.KL_costs = seq2seq.variational_decoder_with_buckets(
-          self.means, self.logvars, self.decoder_inputs, targets,
-          self.target_weights, buckets, decoder_f, latent_dec_f,
-          sample_f, softmax_loss_function=softmax_loss_function)
+    # Our targets are decoder inputs shifted by one.
+    targets = [self.decoder_inputs[i + 1]
+               for i in xrange(len(self.decoder_inputs) - 1)]
+
+
+    self.means, self.logvars = seq2seq.variational_encoder_with_buckets(
+        self.encoder_inputs, buckets, encoder_f, enc_latent_f,
+        softmax_loss_function=softmax_loss_function)
+    self.outputs, self.losses, self.KL_objs, self.KL_costs = seq2seq.variational_decoder_with_buckets(
+        self.means, self.logvars, self.decoder_inputs, targets,
+        self.target_weights, buckets, decoder_f, latent_dec_f,
+        sample_f, softmax_loss_function=softmax_loss_function)
 
     # If we use output projection, we need to project outputs for decoding.
     if output_projection is not None:
@@ -238,10 +242,7 @@ class Seq2SeqModel(object):
       self.gradient_norms = []
       self.updates = []
       for b in xrange(len(buckets)):
-        if probabilistic:
-          total_loss = self.losses[b] + self.KL_objs[b]
-        else:
-          total_loss = self.losses[b]
+        total_loss = self.losses[b] + self.KL_objs[b]
         gradients = tf.gradients(total_loss, params)
         clipped_gradients, norm = tf.clip_by_global_norm(gradients,
                                                          max_gradient_norm)
@@ -253,7 +254,7 @@ class Seq2SeqModel(object):
 
 
 def step(self, session, encoder_inputs, decoder_inputs, target_weights,
-           bucket_id, forward_only, beam_size=1):
+           bucket_id, forward_only, prob, beam_size=1):
   """Run a step of the model feeding the given inputs.
 
   Args:
@@ -297,7 +298,7 @@ def step(self, session, encoder_inputs, decoder_inputs, target_weights,
   # Since our targets are decoder inputs shifted by one, we need one more.
   last_target = self.decoder_inputs[decoder_size].name
   input_feed[last_target] = np.zeros([self.batch_size], dtype=np.int32)
-  if not self.probabilistic:
+  if not prob:
     input_feed[self.logvars[bucket_id]] = np.full((self.batch_size, self.latent_dim), -800.0, dtype=np.float32)
 
   # Output feed: depends on whether we do a backward step or not.

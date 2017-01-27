@@ -159,7 +159,7 @@ def rnn_decoder(decoder_inputs, initial_state, cell, word_dropout_keep_prob=1, r
       if loop_function is not None and prev is not None:
         with variable_scope.variable_scope("loop_function", reuse=True):
           if word_dropout_keep_prob < 1:
-              inp = tf.cond(keep[i], lambda: loop_function(prev, i), lambda: replace_inp)
+            inp = tf.cond(keep[i], lambda: loop_function(prev, i), lambda: replace_inp)
           else:
             inp = loop_function(prev, i)
       if i > 0:
