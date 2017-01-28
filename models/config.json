@@ -1,0 +1,45 @@
+{
+  "model": {
+    "size": 256,
+    "latent_dim": 16,
+    "en_vocab_size": 20000,
+    "fr_vocab_size": 20000,
+    "data_dir": "corpus",
+    "num_layers": 1,
+    "use_lstm": false,
+    "buckets": [[18,19]],
+    "bidirectional": false,
+    "probabilistic": true,
+    "orthogonal_initializer": true,
+    "iaf": true,
+    "activation": "prelu"
+  },
+  "train": {
+    "batch_size": 256,
+    "beam_size": 1,
+    "learning_rate": 0.001,
+    "kl_rate_rise_factor": 0.001,
+    "kl_rate_rise_time": 50000,
+    "max_train_data_size": 0,
+    "steps_per_checkpoint": 2000,
+    "feed_previous": true,
+    "Lambda": 4,
+    "max_gradient_norm": 5.0,
+    "word_dropout_keep_prob": 0.0,
+    "anneal": false
+  },
+  "encode_decode": {
+    "feed_previous": true,
+    "word_dropout_keep_prob": 0.0
+  },
+  "sample": {
+    "feed_previous": true,
+    "word_dropout_keep_prob": 0.0,
+    "num_pts": 10
+  },
+  "interpolate": {
+    "feed_previous": true,
+    "word_dropout_keep_prob": 0.0,
+    "num_pts": 10
+  }
+}

@@ -33,7 +33,6 @@ from __future__ import print_function
 
 import math
 import os
-import random
 import sys
 import time
 import logging
@@ -43,15 +42,15 @@ import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
-import data_utils
+import utils.data_utils as data_utils
 import seq2seq_model
-import h5py
 from tensorflow.python.platform import gfile
 
-tf.app.flags.DEFINE_string("model_dir", "input.txt", "directory of the model.")
+tf.app.flags.DEFINE_string("model_dir", "models", "directory of the model.")
 tf.app.flags.DEFINE_boolean("new", True, "whether this is a new model or not.")
 tf.app.flags.DEFINE_string("do", "train", "what to do. accepts train, interpolate, sample, and decode.")
-tf.app.flags.DEFINE_string("input_file", None, "what to do. accepts train, interpolate, sample, and decode.")
+tf.app.flags.DEFINE_string("input", None, "input filename for encode_decode sample, and interpolate.")
+tf.app.flags.DEFINE_string("output", None, "output filename for encode_decode sample, and interpolate.")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -59,30 +58,6 @@ def prelu(x):
   with tf.variable_scope("prelu") as scope:
     alphas = tf.get_variable("alphas", [], initializer=tf.constant_initializer(0.0), dtype=tf.float32)
     return tf.nn.relu(x) - tf.mul(alphas, tf.nn.relu(-x))
-
-
-def maybe_create_statistics(config):
-  stat_file_name = "stats/" + FLAGS.model_name + ".json" 
-  if FLAGS.new:
-    if os.path.exists(stat_file_name):
-      print("error: create an already existed statistics file")
-      sys.exit()
-    stats = {}
-    stats['hyperparameters'] = config.__dict__
-    stats['model_name'] = FLAGS.model_dir
-    stats['train_perplexity'] = {}
-    stats['train_KL_divergence'] = {}
-    stats['eval_KL_divergence'] = {}
-    stats['eval_perplexity'] = {}
-    stats['wall_time'] = {}
-    with open(stat_file_name, "w") as statfile:
-      statfile.write(json.dumps(stats))
-  else:
-    with open(stat_file_name, "r") as statfile:
-      statjson = statfile.read()
-      stats = json.loads(statjson)
-      hparams = stats['hyperparameters']
-  return stats
 
 
 # We use a number of buckets and pad to the closest one for efficiency.
@@ -176,7 +151,7 @@ def create_model(session, config, forward_only):
   return model
 
 
-def train(config, encode_decode_config, interp_config):
+def train(config):
   """Train a en->fr translation model using WMT data."""
   # Prepare WMT data.
   print("Preparing WMT data in %s" % config.data_dir)
@@ -194,8 +169,8 @@ def train(config, encode_decode_config, interp_config):
     if not config.probabilistic:
       self.kl_rate_update(0.0)
 
-    train_writer = tf.summary.FileWriter(FLAGS.model_dir+ "/train", graph=sess.graph)
-    dev_writer = tf.summary.FileWriter(FLAGS.model_dir + "/test", graph=sess.graph)
+    train_writer = tf.summary.FileWriter(os.path.join(FLAGS.model_dir,"train"), graph=sess.graph)
+    dev_writer = tf.summary.FileWriter(os.path.join(FLAGS.model_dir, "test"), graph=sess.graph)
 
     # Read data into buckets and compute their sizes.
     print ("Reading development and training data (limit: %d)."
@@ -235,7 +210,7 @@ def train(config, encode_decode_config, interp_config):
 
       if config.anneal and model.global_step.eval() > config.kl_rate_rise_time and model.kl_rate < 1:
         new_kl_rate = model.kl_rate.eval() + config.kl_rate_rise_factor
-        sess.run(model.kl_rate_update, feed_dict{'new_kl_rate': new_kl_rate})
+        sess.run(model.kl_rate_update, feed_dict={'new_kl_rate': new_kl_rate})
 
       step_time += (time.time() - start_time) / config.steps_per_checkpoint
       step_loss_summaries.append(tf.Summary(value=[tf.Summary.Value(tag="step loss", simple_value=float(step_loss))]))
@@ -308,19 +283,6 @@ def train(config, encode_decode_config, interp_config):
         dev_writer.add_summary(eval_KL_loss_summary, current_step)
 
 
-        outputs = encode_interpolate(sess, model, interp_config)
-        with gfile.GFile(FLAGS.model_dir + "/{0}.{1}.{2}".format(FLAGS.model_name,current_step, interp_config.input_file), "w") as interp_file:
-          for output in outputs:
-            interp_file.write(output)
-
-        outputs = encode_decode(sess, model, encode_decode_config)
-        with gfile.GFile(FLAGS.model_dir + "/{0}.{1}.{2}".format(FLAGS.model_name, current_step, encode_decode_config.input_file), "w") as enc_dec_file:
-          for output in outputs:
-            enc_dec_file.write(output)
-
-        model.batch_size = config.batch_size
-
-
 def encode_decode(sess, model, config):
   model.batch_size = 1  # We decode one sentence at a time.
   model.probabilistic = config.probabilistic
@@ -328,75 +290,76 @@ def encode_decode(sess, model, config):
 
   # Load vocabularies.
   en_vocab_path = os.path.join(config.data_dir,
-                               "vocab%d.en" % config.en_vocab_size)
+                               "vocab%d.in" % config.en_vocab_size)
   fr_vocab_path = os.path.join(config.data_dir,
-                               "vocab%d.fr" % config.fr_vocab_size)
+                               "vocab%d.out" % config.fr_vocab_size)
   en_vocab, _ = data_utils.initialize_vocabulary(en_vocab_path)
   _, rev_fr_vocab = data_utils.initialize_vocabulary(fr_vocab_path)
 
   # Decode from standard input.
   outputs = []
-  with gfile.GFile(config.input_file, "r") as fs:
+  with gfile.GFile(FLAGS.input, "r") as fs:
     sentences = fs.readlines()
-  with gfile.GFile(FLAGS.model_dir + ".output.txt", "w") as fo:
-    for i, sentence in  enumerate(sentences):
-      # Get token-ids for the input sentence.
-      token_ids = data_utils.sentence_to_token_ids(sentence, en_vocab)
-      # Which bucket does it belong to?
-      bucket_id = len(config.buckets) - 1
-      for i, bucket in enumerate(config.buckets):
-        if bucket[0] >= len(token_ids):
-          bucket_id = i
-          break
-      else:
-        logging.warning("Sentence truncated: %s", sentence) 
+  for i, sentence in  enumerate(sentences):
+    # Get token-ids for the input sentence.
+    token_ids = data_utils.sentence_to_token_ids(sentence, en_vocab)
+    # Which bucket does it belong to?
+    bucket_id = len(config.buckets) - 1
+    for i, bucket in enumerate(config.buckets):
+      if bucket[0] >= len(token_ids):
+        bucket_id = i
+        break
+    else:
+      logging.warning("Sentence truncated: %s", sentence) 
 
-      encoder_inputs, decoder_inputs, target_weights = model.get_batch(
-          {bucket_id: [(token_ids, [])]}, bucket_id)
+    encoder_inputs, decoder_inputs, target_weights = model.get_batch(
+        {bucket_id: [(token_ids, [])]}, bucket_id)
 
-      if beam_size > 1:
-        path, symbol, output_logits = model.step(sess, encoder_inputs, decoder_inputs,
-                target_weights, bucket_id, True, config.probabilistic, beam_size)
+    if beam_size > 1:
+      path, symbol, output_logits = model.step(sess, encoder_inputs, decoder_inputs,
+              target_weights, bucket_id, True, config.probabilistic, beam_size)
 
-        k = output_logits[0]
-        paths = []
+      k = output_logits[0]
+      paths = []
+      for kk in range(beam_size):
+        paths.append([])
+      curr = range(beam_size)
+      num_steps = len(path)
+      for i in range(num_steps-1, -1, -1):
         for kk in range(beam_size):
-          paths.append([])
-        curr = range(beam_size)
-        num_steps = len(path)
-        for i in range(num_steps-1, -1, -1):
-          for kk in range(beam_size):
-            paths[kk].append(symbol[i][curr[kk]])
-              curr[kk] = path[i][curr[kk]]
-        recos = set()
-        for kk in range(beam_size):
-          output = [int(logit)  for logit in paths[kk][::-1]]
+          paths[kk].append(symbol[i][curr[kk]])
+          curr[kk] = path[i][curr[kk]]
+      recos = set()
+      for kk in range(beam_size):
+        output = [int(logit)  for logit in paths[kk][::-1]]
 
-          if EOS_ID in output:
-            output = output[:output.index(EOS_ID)]
-          output = " ".join([rev_fr_vocab[word] for word in output]) + "\n"
-          outputs.append(output)
-
-      else:
-      # Get output logits for the sentence.
-        _, _, _, output_logits = model.step(sess, encoder_inputs, decoder_inputs,
-                                         target_weights, bucket_id, True, config.probabilistic)
-        # This is a greedy decoder - outputs are just argmaxes of output_logits.
-        output = [int(np.argmax(logit, axis=1)) for logit in output_logits]
-        # If there is an EOS symbol in outputs, cut them at that point.
-        if data_utils.EOS_ID in output:
-          output = output[:output.index(data_utils.EOS_ID)]
+        if EOS_ID in output:
+          output = output[:output.index(EOS_ID)]
         output = " ".join([rev_fr_vocab[word] for word in output]) + "\n"
         outputs.append(output)
-  return outputs
+
+    else:
+    # Get output logits for the sentence.
+      _, _, _, output_logits = model.step(sess, encoder_inputs, decoder_inputs,
+                                       target_weights, bucket_id, True, config.probabilistic)
+      # This is a greedy decoder - outputs are just argmaxes of output_logits.
+      output = [int(np.argmax(logit, axis=1)) for logit in output_logits]
+      # If there is an EOS symbol in outputs, cut them at that point.
+      if data_utils.EOS_ID in output:
+        output = output[:output.index(data_utils.EOS_ID)]
+      output = " ".join([rev_fr_vocab[word] for word in output]) + "\n"
+      outputs.append(output)
+  with gfile.GFile(FLAGS.output, "w") as enc_dec_f:
+    for output in outputs:
+      enc_dec_f.write(output)
 
 
 def encode(sess, model, config, sentences):
   # Load vocabularies.
   en_vocab_path = os.path.join(config.data_dir,
-                               "vocab%d.en" % config.en_vocab_size)
+                               "vocab%d.in" % config.en_vocab_size)
   fr_vocab_path = os.path.join(config.data_dir,
-                               "vocab%d.fr" % config.fr_vocab_size)
+                               "vocab%d.out" % config.fr_vocab_size)
   en_vocab, _ = data_utils.initialize_vocabulary(en_vocab_path)
   _, rev_fr_vocab = data_utils.initialize_vocabulary(fr_vocab_path)
   
@@ -427,7 +390,7 @@ def encode(sess, model, config, sentences):
 
 def decode(sess, model, config, means, logvars, bucket_id):
   fr_vocab_path = os.path.join(config.data_dir,
-                               "vocab%d.fr" % config.fr_vocab_size)
+                               "vocab%d.out" % config.fr_vocab_size)
   _, rev_fr_vocab = data_utils.initialize_vocabulary(fr_vocab_path)
 
   _, decoder_inputs, target_weights = model.get_batch(
@@ -447,17 +410,20 @@ def decode(sess, model, config, means, logvars, bucket_id):
   return outputs
   # Print out French sentence corresponding to outputs.
 
-def n_sample(sess, model, sentence, num_sample):
-  mean, logvar = encode(sess, model, [sentence])
+def n_sample(sess, model, config):
+  bucket_id = len(config.buckets) - 1
+  with gfile.GFile(FLAGS.input, "r") as fs:
+    sentences = fs.readlines()
+  mean, logvar = encode(sess, model, config, sentences)
   mean = mean[0][0][0]
   logvar = logvar[0][0][0]
-  means = [mean] * num_sample
+  means = [mean] * config.num_pts
   neg_inf_logvar = np.full(logvar.shape, -800.0, dtype=np.float32)
-  logvars = [neg_inf_logvar] + [logvar] * (num_sample - 1)
-  outputs = decode(sess, model, means, logvars, len(config.buckets) - 1)
-  with gfile.GFile(FLAGS.model_dir + ".{0}_sample.txt".format(num_sample), "w") as fo:
+  logvars = [neg_inf_logvar] + [logvar] * (config.num_pts - 1)
+  outputs = decode(sess, model, config, means, logvars, bucket_id)
+  with gfile.GFile(FLAGS.output, "w") as sample_f:
     for output in outputs:
-      fo.write(output)
+      sample_f.write(output)
   
 
 def interpolate(sess, model, config, means, logvars, num_pts):
@@ -481,17 +447,15 @@ def interpolate(sess, model, config, means, logvars, num_pts):
   return outputs
 
 def encode_interpolate(sess, model, config):
-  if FLAGS.input_file:
-    input_fname = FLAGS.input_file
-  else:
-    input_fname = config.input_file
-  with gfile.GFile(input_fname, "r") as fs:
+  with gfile.GFile(FLAGS.input, "r") as fs:
     sentences = fs.readlines()
   model.batch_size = 1
   model.probabilistic = config.probabilistic
   means, logvars = encode(sess, model, config, sentences)
   outputs = interpolate(sess, model, config, means, logvars, config.num_pts)
-  return outputs
+  with gfile.GFile(FLAGS.output, "w") as interp_f:
+    for output in outputs:
+      interp_f.write(output)
 
 class Struct(object):
   def __init__(self, **entries):
@@ -500,7 +464,17 @@ class Struct(object):
       self.__dict__.update({ "Lambda": None })
     if not self.__dict__.get("max_gradient_norm"):
       self.__dict__.update({ "max_gradient_norm": 5.0 })
-  def update(self, **entries)
+    if not self.__dict__.get("load_embeddings"):
+      self.__dict__.update({ "load_embeddings": False })
+    if not self.__dict__.get("batch_size"):
+      self.__dict__.update({ "batch_size": 1 })
+    if not self.__dict__.get("learning_rate"):
+      self.__dict__.update({ "learning_rate": 0.001 })
+    if not self.__dict__.get("anneal"):
+      self.__dict__.update({ "anneal": False })
+    if not self.__dict__.get("beam_size"):
+      self.__dict__.update({ "beam_size": 1 })
+  def update(self, **entries):
     self.__dict__.update(entries)
 
 
@@ -514,29 +488,32 @@ def main(_):
   if FLAGS.do not in behavior:
     raise ValueError("argument \"do\" is not one of the following: train, interpolate, decode or sample.")
 
+  if FLAGS.do != "train":
+    FLAGS.new = False
+
   config = Struct(**configs["model"])
-  config = config.update(Struct(**configs[FLAGS.do]))
+  config.update(**configs[FLAGS.do])
   interp_config = Struct(**configs["model"])
-  interp_config = interp_config.update(Struct(**configs["interpolate"]))
+  interp_config.update(**configs["interpolate"])
   enc_dec_config = Struct(**configs["model"])
-  enc_dec_config = enc_dec_config.update(Struct(**configs["encode_decode"]))
+  enc_dec_config.update(**configs["encode_decode"])
+  sample_config = Struct(**configs["model"])
+  sample_config.update(**configs["sample"])
 
   if FLAGS.do == "encode_decode":
     with tf.Session() as sess:
       model = create_model(sess, enc_dec_config, True)
-      outputs = encode_decode(sess, model, enc_dec_config)
-    with gfile.GFile(os.path.join(FLAGS.model_dir, "encode_decode.txt"), "w") as enc_dec_f:
-      for output in outputs:
-        enc_dec_f.write(output)
+      encode_decode(sess, model, enc_dec_config)
   elif FLAGS.do == "interpolate":
     with tf.Session() as sess:
       model = create_model(sess, interp_config, True)
-      outputs = encode_interpolate(sess, model, interp_config)
-    with gfile.GFile(os.path.join(FLAGS.model_dir, "interpolate.txt"), "w") as interp_f:
-      for output in outputs:
-        interp_f.write(output)
+      encode_interpolate(sess, model, interp_config)
+  elif FLAGS.do == "sample":
+    with tf.Session() as sess:
+      model = create_model(sess, sample_config, True)
+      n_sample(sess, model, config)
   elif FLAGS.do == "train":
-    train(config, enc_dec_config, interp_config)
+    train(config)
 
 if __name__ == "__main__":
   tf.app.run()

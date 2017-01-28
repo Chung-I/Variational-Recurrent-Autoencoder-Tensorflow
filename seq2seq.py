@@ -75,7 +75,6 @@ from tensorflow.python.ops import variable_scope
 from tensorflow.python.util import nest
 import tensorflow as tf
 import numpy as np
-import pdb
 from utils.distributions import DiagonalGaussian
 
 # TODO(ebrevdo): Remove once _linear is fully deprecated.
@@ -198,7 +197,6 @@ def beam_rnn_decoder(decoder_inputs, initial_state, cell, loop_function=None,
         (Note that in some cases, like basic RNN cell or GRU cell, outputs and
          states can be the same. They are different for LSTM cells though.)
   """
-  print("beam size: {0}".format(beam_size))
   with variable_scope.variable_scope(scope or "rnn_decoder"):
     state = initial_state
     outputs = []
@@ -214,7 +212,6 @@ def beam_rnn_decoder(decoder_inputs, initial_state, cell, loop_function=None,
         variable_scope.get_variable_scope().reuse_variables()
 
       input_size = inp.get_shape().with_rank(2)[1]
-      print(input_size)
       x = inp
       output, state = cell(x, state)
 
@@ -286,7 +283,6 @@ def embedding_rnn_decoder(decoder_inputs,
   Raises:
     ValueError: When output_projection has the wrong shape.
   """
-  print("feed_previous: {0}".format(feed_previous))
   with variable_scope.variable_scope(scope or "embedding_rnn_decoder") as scope:
     if output_projection is not None:
       dtype = scope.dtype
@@ -692,11 +688,8 @@ def encoder_to_latent(encoder_state,
                       num_layers,
                       activation=tf.nn.relu,
                       use_lstm=False,
-                      mean_logvar_split=False,
                       enc_state_bidirectional=False,
                       dtype=None):
-  print(activation)
-  print("encoder_to_latent") 
   concat_state_size = num_layers * embedding_size
   if enc_state_bidirectional:
     concat_state_size *= 2
@@ -727,7 +720,6 @@ def latent_to_decoder(latent_vector,
                       use_lstm=False,
                       dtype=None):
 
-  print("latent_to_decoder") 
   concat_state_size = num_layers * embedding_size
   if use_lstm:
     concat_state_size *= 2
@@ -799,7 +791,6 @@ def variational_autoencoder_with_buckets(encoder_inputs, decoder_inputs, targets
   losses = []
   outputs = []
   KL_divergences = []
-  print("variational_autoencoder_with_buckets")
   with ops.name_scope(name, "variational_autoencoder_with_buckets", all_inputs):
     for j, bucket in enumerate(buckets):
       with variable_scope.variable_scope(variable_scope.get_variable_scope(),
@@ -841,7 +832,6 @@ def variational_encoder_with_buckets(encoder_inputs, buckets, encoder,
   all_inputs = encoder_inputs
   means = []
   logvars = []
-  print("variational_encoder_with_buckets")
   with ops.name_scope(name, "variational_encoder_with_buckets", all_inputs):
     for j, bucket in enumerate(buckets):
       with variable_scope.variable_scope(variable_scope.get_variable_scope(),
@@ -872,7 +862,6 @@ def variational_decoder_with_buckets(means, logvars, decoder_inputs,
   outputs = []
   KL_objs = []
   KL_costs = []
-  print("variational_decoder_with_buckets")
   with ops.name_scope(name, "variational_decoder_with_buckets", all_inputs):
     for j, bucket in enumerate(buckets):
       with variable_scope.variable_scope(variable_scope.get_variable_scope(),
@@ -919,7 +908,6 @@ def variational_beam_decoder_with_buckets(means, logvars, decoder_inputs,
   beam_paths = []
   beam_path = []
   KL_divergences = []
-  print("variational_decoder_with_buckets")
   with ops.name_scope(name, "variational_decoder_with_buckets", all_inputs):
     for j, bucket in enumerate(buckets):
       with variable_scope.variable_scope(variable_scope.get_variable_scope(),

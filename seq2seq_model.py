@@ -25,9 +25,8 @@ import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
-import data_utils
+import utils.data_utils as data_utils
 import seq2seq
-import pdb
 from tensorflow.python.ops import variable_scope
 
 class Seq2SeqModel(object):
@@ -94,7 +93,6 @@ class Seq2SeqModel(object):
     """
     self.source_vocab_size = source_vocab_size
     self.target_vocab_size = target_vocab_size
-    self.probabilistic = probabilistic
     self.latent_dim = latent_dim
     self.buckets = buckets
     self.batch_size = batch_size
@@ -109,6 +107,8 @@ class Seq2SeqModel(object):
 
     self.dec_embedding = tf.get_variable("dec_embedding", [target_vocab_size, size], dtype=dtype, initializer=weight_initializer())
 
+    self.kl_rate = tf.Variable(
+       0.0, trainable=False, dtype=dtype)
     self.new_kl_rate = tf.placeholder(tf.float32, shape=[], name="new_kl_rate")
     self.kl_rate_update = tf.assign(self.kl_rate, self.new_kl_rate)
 
@@ -129,6 +129,10 @@ class Seq2SeqModel(object):
 
       def sampled_loss(inputs, labels):
         labels = tf.reshape(labels, [-1, 1])
+        # We need to compute the sampled_softmax_loss using 32bit floats to
+        # avoid numerical instabilities.
+        local_w_t = tf.cast(w_t, tf.float32)
+        local_b = tf.cast(b, tf.float32)
         local_inputs = tf.cast(inputs, tf.float32)
         return tf.cast(
             tf.nn.sampled_softmax_loss(local_w_t, local_b, local_inputs, labels,
@@ -146,13 +150,12 @@ class Seq2SeqModel(object):
       return seq2seq.embedding_encoder(
           encoder_inputs,
           cell,
-          embedding,
-          num_symbols,
-          embedding_size,
-          bidirectional=False,
-          dtype=None,
-          weight_initializer=None,
-          scope=None)
+          self.enc_embedding,
+          num_symbols=source_vocab_size,
+          embedding_size=size,
+          bidirectional=bidirectional,
+          weight_initializer=weight_initializer,
+          dtype=dtype)
 
     def decoder_f(encoder_state, decoder_inputs):
       return seq2seq.embedding_rnn_decoder(
@@ -167,6 +170,17 @@ class Seq2SeqModel(object):
           output_projection=output_projection,
           feed_previous=feed_previous,
           weight_initializer=weight_initializer)
+
+    def enc_latent_f(encoder_state):
+      return seq2seq.encoder_to_latent(
+                     encoder_state,
+                     embedding_size=size,
+                     latent_dim=latent_dim,
+                     num_layers=num_layers,
+                     activation=activation,
+                     use_lstm=use_lstm,
+                     enc_state_bidirectional=bidirectional,
+                     dtype=dtype)
 
     def latent_dec_f(latent_vector):
       return seq2seq.latent_to_decoder(latent_vector,
@@ -250,73 +264,73 @@ class Seq2SeqModel(object):
         self.updates.append(optimizer.apply_gradients(
             zip(clipped_gradients, params), global_step=self.global_step))
 
-        self.saver = tf.train.Saver(tf.global_variables())
+    self.saver = tf.train.Saver(tf.global_variables())
 
 
-def step(self, session, encoder_inputs, decoder_inputs, target_weights,
-           bucket_id, forward_only, prob, beam_size=1):
-  """Run a step of the model feeding the given inputs.
-
-  Args:
-    session: tensorflow session to use.
-    encoder_inputs: list of numpy int vectors to feed as encoder inputs.
-    decoder_inputs: list of numpy int vectors to feed as decoder inputs.
-    target_weights: list of numpy float vectors to feed as target weights.
-    bucket_id: which bucket of the model to use.
-    forward_only: whether to do the backward step or only forward.
-
-  Returns:
-    A triple consisting of gradient norm (or None if we did not do backward),
-    average perplexity, and the outputs.
-
-  Raises:
-    ValueError: if length of encoder_inputs, decoder_inputs, or
-      target_weights disagrees with bucket size for the specified bucket_id.
-  """
-  # Check if the sizes match.
-  encoder_size, decoder_size = self.buckets[bucket_id]
-  if len(encoder_inputs) != encoder_size:
-    raise ValueError("Encoder length must be equal to the one in bucket,"
-                     " %d != %d." % (len(encoder_inputs), encoder_size))
-  if len(decoder_inputs) != decoder_size:
-    raise ValueError("Decoder length must be equal to the one in bucket,"
-                     " %d != %d." % (len(decoder_inputs), decoder_size))
-  if len(target_weights) != decoder_size:
-    raise ValueError("Weights length must be equal to the one in bucket,"
-                     " %d != %d." % (len(target_weights), decoder_size))
-
-  # Input feed: encoder inputs, decoder inputs, target_weights, as provided.
-  input_feed = {}
-  for l in xrange(encoder_size):
-    input_feed[self.encoder_inputs[l].name] = encoder_inputs[l]
-  for l in xrange(decoder_size):
-    input_feed[self.decoder_inputs[l].name] = decoder_inputs[l]
-    input_feed[self.target_weights[l].name] = target_weights[l]
-  if self.word_dropout_keep_prob < 1:
-    input_feed[self.replace_input.name] = np.full((self.batch_size), data_utils.UNK_ID, dtype=np.int32)
-
-  # Since our targets are decoder inputs shifted by one, we need one more.
-  last_target = self.decoder_inputs[decoder_size].name
-  input_feed[last_target] = np.zeros([self.batch_size], dtype=np.int32)
-  if not prob:
-    input_feed[self.logvars[bucket_id]] = np.full((self.batch_size, self.latent_dim), -800.0, dtype=np.float32)
-
-  # Output feed: depends on whether we do a backward step or not.
-  if not forward_only:
-    output_feed = [self.updates[bucket_id],  # Update Op that does SGD.
-                   self.gradient_norms[bucket_id],  # Gradient norm.
-                   self.losses[bucket_id],
-                   self.KL_costs[bucket_id]]  # Loss for this batch.
-  else:
-    output_feed = [self.losses[bucket_id], self.KL_costs[bucket_id]]  # Loss for this batch.
-    for l in xrange(decoder_size):  # Output logits.
-      output_feed.append(self.outputs[bucket_id][l])
-
-  outputs = session.run(output_feed, input_feed)
-  if not forward_only:
-    return outputs[1], outputs[2], outputs[3], None  # Gradient norm, loss, KL divergence, no outputs.
-  else:
-    return None, outputs[0], outputs[1], outputs[2:]  # no gradient norm, loss, KL divergence, outputs.
+  def step(self, session, encoder_inputs, decoder_inputs, target_weights,
+             bucket_id, forward_only, prob, beam_size=1):
+    """Run a step of the model feeding the given inputs.
+  
+    Args:
+      session: tensorflow session to use.
+      encoder_inputs: list of numpy int vectors to feed as encoder inputs.
+      decoder_inputs: list of numpy int vectors to feed as decoder inputs.
+      target_weights: list of numpy float vectors to feed as target weights.
+      bucket_id: which bucket of the model to use.
+      forward_only: whether to do the backward step or only forward.
+  
+    Returns:
+      A triple consisting of gradient norm (or None if we did not do backward),
+      average perplexity, and the outputs.
+  
+    Raises:
+      ValueError: if length of encoder_inputs, decoder_inputs, or
+        target_weights disagrees with bucket size for the specified bucket_id.
+    """
+    # Check if the sizes match.
+    encoder_size, decoder_size = self.buckets[bucket_id]
+    if len(encoder_inputs) != encoder_size:
+      raise ValueError("Encoder length must be equal to the one in bucket,"
+                       " %d != %d." % (len(encoder_inputs), encoder_size))
+    if len(decoder_inputs) != decoder_size:
+      raise ValueError("Decoder length must be equal to the one in bucket,"
+                       " %d != %d." % (len(decoder_inputs), decoder_size))
+    if len(target_weights) != decoder_size:
+      raise ValueError("Weights length must be equal to the one in bucket,"
+                       " %d != %d." % (len(target_weights), decoder_size))
+  
+    # Input feed: encoder inputs, decoder inputs, target_weights, as provided.
+    input_feed = {}
+    for l in xrange(encoder_size):
+      input_feed[self.encoder_inputs[l].name] = encoder_inputs[l]
+    for l in xrange(decoder_size):
+      input_feed[self.decoder_inputs[l].name] = decoder_inputs[l]
+      input_feed[self.target_weights[l].name] = target_weights[l]
+    if self.word_dropout_keep_prob < 1:
+      input_feed[self.replace_input.name] = np.full((self.batch_size), data_utils.UNK_ID, dtype=np.int32)
+  
+    # Since our targets are decoder inputs shifted by one, we need one more.
+    last_target = self.decoder_inputs[decoder_size].name
+    input_feed[last_target] = np.zeros([self.batch_size], dtype=np.int32)
+    if not prob:
+      input_feed[self.logvars[bucket_id]] = np.full((self.batch_size, self.latent_dim), -800.0, dtype=np.float32)
+  
+    # Output feed: depends on whether we do a backward step or not.
+    if not forward_only:
+      output_feed = [self.updates[bucket_id],  # Update Op that does SGD.
+                     self.gradient_norms[bucket_id],  # Gradient norm.
+                     self.losses[bucket_id],
+                     self.KL_costs[bucket_id]]  # Loss for this batch.
+    else:
+      output_feed = [self.losses[bucket_id], self.KL_costs[bucket_id]]  # Loss for this batch.
+      for l in xrange(decoder_size):  # Output logits.
+        output_feed.append(self.outputs[bucket_id][l])
+  
+    outputs = session.run(output_feed, input_feed)
+    if not forward_only:
+      return outputs[1], outputs[2], outputs[3], None  # Gradient norm, loss, KL divergence, no outputs.
+    else:
+      return None, outputs[0], outputs[1], outputs[2:]  # no gradient norm, loss, KL divergence, outputs.
 
 
   def encode_to_latent(self, session, encoder_inputs, bucket_id):
