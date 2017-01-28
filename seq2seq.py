@@ -682,6 +682,7 @@ def sample(means,
 
   return latent_vector, kl_obj, kl_cost #both kl_obj and kl_cost are scalar
 
+
 def encoder_to_latent(encoder_state,
                       embedding_size,
                       latent_dim,
@@ -821,8 +822,7 @@ def variational_autoencoder_with_buckets(encoder_inputs, decoder_inputs, targets
 
 
 def variational_encoder_with_buckets(encoder_inputs, buckets, encoder,
-                       enc_latent, softmax_loss_function=None,
-                       per_example_loss=False, name=None):
+                       enc_latent, name=None):
   """Create a sequence-to-sequence model with support for bucketing.
   """
   if len(encoder_inputs) < buckets[-1][0]:
@@ -843,9 +843,27 @@ def variational_encoder_with_buckets(encoder_inputs, buckets, encoder,
 
   return means, logvars
 
-def variational_decoder_with_buckets(means, logvars, decoder_inputs,
+def sample_with_buckets(means, logvars, weights, buckets):
+
+  KL_objs = []
+  KL_costs = []
+  latent_vectors = []
+  with ops.name_scope(name, "variational_encoder_with_buckets", all_inputs):
+    for j, bucket in enumerate(buckets):
+      with variable_scope.variable_scope(variable_scope.get_variable_scope(),
+                                         reuse=True if j > 0 else None):
+      latent_vector, kl_obj, kl_cost = sample(means[j], logvars[j])
+      latent_vectors.append(latent_vector)
+      total_size = math_ops.add_n(weights[:bucket[1]])
+      total_size += 1e-12 
+      KL_objs.append(tf.reduce_mean(kl_obj / total_size))
+      KL_costs.append(tf.reduce_mean(kl_cost / total_size))
+
+  return latent_vectors, KL_objs, KL_costs
+
+def variational_decoder_with_buckets(latent_vectors, decoder_inputs,
                        targets, weights,
-                       buckets, decoder, latent_dec, sample,
+                       buckets, decoder, latent_dec,
                        softmax_loss_function=None,
                        per_example_loss=False, name=None):
   """Create a sequence-to-sequence model with support for bucketing.
@@ -860,22 +878,15 @@ def variational_decoder_with_buckets(means, logvars, decoder_inputs,
   all_inputs = decoder_inputs + targets + weights
   losses = []
   outputs = []
-  KL_objs = []
-  KL_costs = []
   with ops.name_scope(name, "variational_decoder_with_buckets", all_inputs):
     for j, bucket in enumerate(buckets):
       with variable_scope.variable_scope(variable_scope.get_variable_scope(),
                                            reuse=True if j > 0 else None):
 
-        latent_vector, kl_obj, kl_cost = sample(means[j], logvars[j])
-        decoder_initial_state = latent_dec(latent_vector)
+        decoder_initial_state = latent_dec(latent_vectors[j])
 
         bucket_outputs, _ = decoder(decoder_initial_state, decoder_inputs[:bucket[1]])
         outputs.append(bucket_outputs)
-        total_size = math_ops.add_n(weights[:bucket[1]])
-        total_size += 1e-12 
-        KL_objs.append(tf.reduce_mean(kl_obj / total_size))
-        KL_costs.append(tf.reduce_mean(kl_cost / total_size))
         if per_example_loss:
           losses.append(sequence_loss_by_example(
               outputs[-1], targets[:bucket[1]], weights[:bucket[1]],
@@ -885,7 +896,7 @@ def variational_decoder_with_buckets(means, logvars, decoder_inputs,
               outputs[-1], targets[:bucket[1]], weights[:bucket[1]],
               softmax_loss_function=softmax_loss_function))
 
-  return outputs, losses, KL_objs, KL_costs
+  return outputs, losses
 
 
 def variational_beam_decoder_with_buckets(means, logvars, decoder_inputs,

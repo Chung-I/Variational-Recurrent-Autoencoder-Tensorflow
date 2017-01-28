@@ -236,12 +236,13 @@ class Seq2SeqModel(object):
 
 
     self.means, self.logvars = seq2seq.variational_encoder_with_buckets(
-        self.encoder_inputs, buckets, encoder_f, enc_latent_f,
-        softmax_loss_function=softmax_loss_function)
+        self.encoder_inputs, buckets, encoder_f, enc_latent_f)
+    self.latent_vectors, self.KL_objs, self.KL_costs = seq2seq.sample_with_buckets(
+        self.means, self.logvars, self.target_weights, buckets)
     self.outputs, self.losses, self.KL_objs, self.KL_costs = seq2seq.variational_decoder_with_buckets(
-        self.means, self.logvars, self.decoder_inputs, targets,
+        self.latent_vectors, self.decoder_inputs, targets,
         self.target_weights, buckets, decoder_f, latent_dec_f,
-        sample_f, softmax_loss_function=softmax_loss_function)
+        softmax_loss_function=softmax_loss_function)
 
     # If we use output projection, we need to project outputs for decoding.
     if output_projection is not None:
