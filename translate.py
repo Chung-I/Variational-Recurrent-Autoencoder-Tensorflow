@@ -388,7 +388,7 @@ def encode(sess, model, config, sentences):
   return means, logvars
 
 
-def decode(sess, model, config, means, logvars, bucket_id):
+def decode(sess, model, config, latent_vectors, bucket_id):
   fr_vocab_path = os.path.join(config.data_dir,
                                "vocab%d.out" % config.fr_vocab_size)
   _, rev_fr_vocab = data_utils.initialize_vocabulary(fr_vocab_path)
@@ -396,10 +396,9 @@ def decode(sess, model, config, means, logvars, bucket_id):
   _, decoder_inputs, target_weights = model.get_batch(
       {bucket_id: [([], [])]}, bucket_id)
   outputs = []
-  for mean, logvar in zip(means, logvars):
-    mean = mean.reshape(1,-1)
-    logvar = logvar.reshape(1,-1)
-    output_logits = model.decode_from_latent(sess, mean, logvar, bucket_id, decoder_inputs, target_weights)
+  for latent_vector in latent_vectors:
+    latent_vector = latent_vector.reshape(1,-1)
+    output_logits = model.decode_from_latent(sess, latent_vector, bucket_id, decoder_inputs, target_weights)
     output = [int(np.argmax(logit, axis=1)) for logit in output_logits]
     # If there is an EOS symbol in outputs, cut them at that point.
     if data_utils.EOS_ID in output:
@@ -420,21 +419,22 @@ def n_sample(sess, model, config):
   means = [mean] * config.num_pts
   neg_inf_logvar = np.full(logvar.shape, -800.0, dtype=np.float32)
   logvars = [neg_inf_logvar] + [logvar] * (config.num_pts - 1)
-  outputs = decode(sess, model, config, means, logvars, bucket_id)
+  latent_vectors = model.sample(sess, means, logvars, bucket_id)
+  outputs = decode(sess, model, config, latent_vectors, bucket_id)
   with gfile.GFile(FLAGS.output, "w") as sample_f:
     for output in outputs:
       sample_f.write(output)
   
 
-def interpolate(sess, model, config, means, logvars, num_pts):
-  if len(means) != 2:
+def interpolate(sess, model, config, latent_vectors, num_pts):
+  if len(latent_vectors) != 2:
     raise ValueError("there should be two sentences when interpolating."
-                     "number of setences: %d." % len(means))
+                     "number of setences: %d." % len(latent_vectors))
   if num_pts < 3:
     raise ValueError("there should be more than two points when interpolating."
                      "number of points: %d." % num_pts)
   pts = []
-  for s, e in zip(means[0][0][0].tolist(),means[1][0][0].tolist()):
+  for s, e in zip(latent_vectors[0][0][0].tolist(),latent_vectors[1][0][0].tolist()):
     pts.append(np.linspace(s, e, num_pts))
 
   pts = np.array(pts)
@@ -442,7 +442,7 @@ def interpolate(sess, model, config, means, logvars, num_pts):
   pts = [np.array(pt) for pt in pts.tolist()]
   bucket_id = len(config.buckets) - 1
   logvars = [np.full(pt.shape, -800.0, dtype=np.float32) for pt in pts]
-  outputs = decode(sess, model, config, pts, logvars, bucket_id)
+  outputs = decode(sess, model, config, pts, bucket_id)
 
   return outputs
 
@@ -452,7 +452,8 @@ def encode_interpolate(sess, model, config):
   model.batch_size = 1
   model.probabilistic = config.probabilistic
   means, logvars = encode(sess, model, config, sentences)
-  outputs = interpolate(sess, model, config, means, logvars, config.num_pts)
+  latent_vectors = model.sample(sess, means, logvars, bucket_id)
+  outputs = interpolate(sess, model, config, latent_vectors, config.num_pts)
   with gfile.GFile(FLAGS.output, "w") as interp_f:
     for output in outputs:
       interp_f.write(output)

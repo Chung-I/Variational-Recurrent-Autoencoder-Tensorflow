@@ -353,13 +353,21 @@ class Seq2SeqModel(object):
 
     return means, logvars
 
+  def sample(self, session, means, logvars, bucket_id):
 
-  def decode_from_latent(self, session, means, logvars, bucket_id, decoder_inputs, target_weights):
+    input_feed = {self.means[bucket_id]: means}
+    input_feed[self.logvars[bucket_id]] = logvars
+
+    output_feed = self.latent_vectors
+    latent_vectors = session.run(output_feed, input_feed)
+
+    return latent_vectors
+
+  def decode_from_latent(self, session, latent_vectors, bucket_id, decoder_inputs, target_weights):
 
     _, decoder_size = self.buckets[bucket_id]
     # Input feed: means.
-    input_feed = {self.means[bucket_id]: means}
-    input_feed[self.logvars[bucket_id]] = logvars
+    input_feed = {self.latent_vectors[bucket_id]: latent_vectors}
 
     for l in xrange(decoder_size):
       input_feed[self.decoder_inputs[l].name] = decoder_inputs[l]
