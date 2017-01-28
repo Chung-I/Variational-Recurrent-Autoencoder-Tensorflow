@@ -33,7 +33,6 @@ from __future__ import print_function
 
 import math
 import os
-import random
 import sys
 import time
 import logging
@@ -45,14 +44,13 @@ import tensorflow as tf
 
 import utils.data_utils as data_utils
 import seq2seq_model
-import h5py
 from tensorflow.python.platform import gfile
 
 tf.app.flags.DEFINE_string("model_dir", "models", "directory of the model.")
 tf.app.flags.DEFINE_boolean("new", True, "whether this is a new model or not.")
 tf.app.flags.DEFINE_string("do", "train", "what to do. accepts train, interpolate, sample, and decode.")
-tf.app.flags.DEFINE_string("input_file", None, "input filename for encode_decode sample, and interpolate.")
-tf.app.flags.DEFINE_string("output_file", None, "output filename for encode_decode sample, and interpolate.")
+tf.app.flags.DEFINE_string("input", None, "input filename for encode_decode sample, and interpolate.")
+tf.app.flags.DEFINE_string("output", None, "output filename for encode_decode sample, and interpolate.")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -171,8 +169,8 @@ def train(config):
     if not config.probabilistic:
       self.kl_rate_update(0.0)
 
-    train_writer = tf.summary.FileWriter(FLAGS.model_dir+ "/train", graph=sess.graph)
-    dev_writer = tf.summary.FileWriter(FLAGS.model_dir + "/test", graph=sess.graph)
+    train_writer = tf.summary.FileWriter(os.path.join(FLAGS.model_dir,"train"), graph=sess.graph)
+    dev_writer = tf.summary.FileWriter(os.path.join(FLAGS.model_dir, "test"), graph=sess.graph)
 
     # Read data into buckets and compute their sizes.
     print ("Reading development and training data (limit: %d)."
@@ -300,7 +298,7 @@ def encode_decode(sess, model, config):
 
   # Decode from standard input.
   outputs = []
-  with gfile.GFile(FLAGS.input_file, "r") as fs:
+  with gfile.GFile(FLAGS.input, "r") as fs:
     sentences = fs.readlines()
   for i, sentence in  enumerate(sentences):
     # Get token-ids for the input sentence.
@@ -351,7 +349,7 @@ def encode_decode(sess, model, config):
         output = output[:output.index(data_utils.EOS_ID)]
       output = " ".join([rev_fr_vocab[word] for word in output]) + "\n"
       outputs.append(output)
-  with gfile.GFile(FLAGS.output_file, "w") as enc_dec_f:
+  with gfile.GFile(FLAGS.output, "w") as enc_dec_f:
     for output in outputs:
       enc_dec_f.write(output)
 
@@ -412,17 +410,18 @@ def decode(sess, model, config, means, logvars, bucket_id):
   return outputs
   # Print out French sentence corresponding to outputs.
 
-def n_sample(sess, model,cofig):
-  with gfile.GFile(FLAGS.input_file, "r") as fs:
+def n_sample(sess, model, config):
+  bucket_id = len(config.buckets) - 1
+  with gfile.GFile(FLAGS.input, "r") as fs:
     sentences = fs.readlines()
   mean, logvar = encode(sess, model, config, sentences)
   mean = mean[0][0][0]
   logvar = logvar[0][0][0]
-  means = [mean] * num_sample
+  means = [mean] * config.num_pts
   neg_inf_logvar = np.full(logvar.shape, -800.0, dtype=np.float32)
-  logvars = [neg_inf_logvar] + [logvar] * (num_sample - 1)
-  outputs = decode(sess, model, means, logvars, len(config.buckets) - 1)
-  with gfile.GFile(FLAGS.output_file, "w") as sample_f:
+  logvars = [neg_inf_logvar] + [logvar] * (config.num_pts - 1)
+  outputs = decode(sess, model, config, means, logvars, bucket_id)
+  with gfile.GFile(FLAGS.output, "w") as sample_f:
     for output in outputs:
       sample_f.write(output)
   
@@ -448,16 +447,14 @@ def interpolate(sess, model, config, means, logvars, num_pts):
   return outputs
 
 def encode_interpolate(sess, model, config):
-  with gfile.GFile(FLAGS.input_file, "r") as fs:
+  with gfile.GFile(FLAGS.input, "r") as fs:
     sentences = fs.readlines()
   model.batch_size = 1
   model.probabilistic = config.probabilistic
   means, logvars = encode(sess, model, config, sentences)
   outputs = interpolate(sess, model, config, means, logvars, config.num_pts)
-  print(outputs)
-  with gfile.GFile(FLAGS.output_file, "w") as interp_f:
+  with gfile.GFile(FLAGS.output, "w") as interp_f:
     for output in outputs:
-      print(output)
       interp_f.write(output)
 
 class Struct(object):
@@ -475,6 +472,8 @@ class Struct(object):
       self.__dict__.update({ "learning_rate": 0.001 })
     if not self.__dict__.get("anneal"):
       self.__dict__.update({ "anneal": False })
+    if not self.__dict__.get("beam_size"):
+      self.__dict__.update({ "beam_size": 1 })
   def update(self, **entries):
     self.__dict__.update(entries)
 
@@ -489,12 +488,17 @@ def main(_):
   if FLAGS.do not in behavior:
     raise ValueError("argument \"do\" is not one of the following: train, interpolate, decode or sample.")
 
+  if FLAGS.do != "train":
+    FLAGS.new = False
+
   config = Struct(**configs["model"])
   config.update(**configs[FLAGS.do])
   interp_config = Struct(**configs["model"])
   interp_config.update(**configs["interpolate"])
   enc_dec_config = Struct(**configs["model"])
   enc_dec_config.update(**configs["encode_decode"])
+  sample_config = Struct(**configs["model"])
+  sample_config.update(**configs["sample"])
 
   if FLAGS.do == "encode_decode":
     with tf.Session() as sess:

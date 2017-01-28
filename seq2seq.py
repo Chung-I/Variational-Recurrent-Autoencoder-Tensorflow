@@ -75,7 +75,6 @@ from tensorflow.python.ops import variable_scope
 from tensorflow.python.util import nest
 import tensorflow as tf
 import numpy as np
-import pdb
 from utils.distributions import DiagonalGaussian
 
 # TODO(ebrevdo): Remove once _linear is fully deprecated.

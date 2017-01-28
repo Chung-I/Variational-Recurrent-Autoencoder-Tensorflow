@@ -22,7 +22,6 @@ import gzip
 import os
 import re
 import tarfile
-from . import embed_utils
 
 from six.moves import urllib
 
@@ -249,9 +248,9 @@ def prepare_wmt_data(data_dir, en_vocabulary_size, fr_vocabulary_size,
   create_vocabulary(en_vocab_path, train_path + ".in", en_vocabulary_size,
           os.path.join(data_dir, "enc_embedding{0}.tsv".format(en_vocabulary_size)),
           tokenizer)
-  if load_embeddings:
-    embed_utils.save_embeddings(fr_vocab_path, "embed5000.txt")
-    embed_utils.save_embeddings(en_vocab_path, "embed5000.txt")
+  #if load_embeddings:
+  #  embed_utils.save_embeddings(fr_vocab_path, "embed5000.txt")
+  #  embed_utils.save_embeddings(en_vocab_path, "embed5000.txt")
     
 
   # Create token ids for the training data.

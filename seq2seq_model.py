@@ -27,7 +27,6 @@ import tensorflow as tf
 
 import utils.data_utils as data_utils
 import seq2seq
-import pdb
 from tensorflow.python.ops import variable_scope
 
 class Seq2SeqModel(object):
