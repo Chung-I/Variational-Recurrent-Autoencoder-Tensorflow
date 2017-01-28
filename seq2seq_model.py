@@ -238,8 +238,8 @@ class Seq2SeqModel(object):
     self.means, self.logvars = seq2seq.variational_encoder_with_buckets(
         self.encoder_inputs, buckets, encoder_f, enc_latent_f)
     self.latent_vectors, self.KL_objs, self.KL_costs = seq2seq.sample_with_buckets(
-        self.means, self.logvars, self.target_weights, buckets)
-    self.outputs, self.losses, self.KL_objs, self.KL_costs = seq2seq.variational_decoder_with_buckets(
+        self.means, self.logvars, self.target_weights, buckets, sample_f)
+    self.outputs, self.losses = seq2seq.variational_decoder_with_buckets(
         self.latent_vectors, self.decoder_inputs, targets,
         self.target_weights, buckets, decoder_f, latent_dec_f,
         softmax_loss_function=softmax_loss_function)
@@ -346,28 +346,29 @@ class Seq2SeqModel(object):
     for l in xrange(encoder_size):
       input_feed[self.encoder_inputs[l].name] = encoder_inputs[l]
 
-
-
-    output_feed = [self.means, self.logvars]
+    output_feed = [self.means[bucket_id], self.logvars[bucket_id]]
     means, logvars = session.run(output_feed, input_feed)
 
     return means, logvars
+
 
   def sample(self, session, means, logvars, bucket_id):
 
     input_feed = {self.means[bucket_id]: means}
     input_feed[self.logvars[bucket_id]] = logvars
 
-    output_feed = self.latent_vectors
+    output_feed = self.latent_vectors[bucket_id]
     latent_vectors = session.run(output_feed, input_feed)
 
     return latent_vectors
+
 
   def decode_from_latent(self, session, latent_vectors, bucket_id, decoder_inputs, target_weights):
 
     _, decoder_size = self.buckets[bucket_id]
     # Input feed: means.
-    input_feed = {self.latent_vectors[bucket_id]: latent_vectors}
+    input_feed = {}
+    input_feed[self.latent_vectors[bucket_id]] = latent_vectors
 
     for l in xrange(decoder_size):
       input_feed[self.decoder_inputs[l].name] = decoder_inputs[l]

@@ -370,20 +370,14 @@ def encode(sess, model, config, sentences):
     token_ids = data_utils.sentence_to_token_ids(sentence, en_vocab)
     # Which bucket does it belong to?
     bucket_id = len(config.buckets) - 1
-    for i, bucket in enumerate(config.buckets):
-      if bucket[0] >= len(token_ids):
-        bucket_id = i
-        break
-    else:
-      logging.warning("Sentence truncated: %s", sentence) 
 
         # Get a 1-element batch to feed the sentence to the model.
     encoder_inputs, _, _ = model.get_batch(
         {bucket_id: [(token_ids, [])]}, bucket_id)
     # Get output logits for the sentence.
     mean, logvar = model.encode_to_latent(sess, encoder_inputs, bucket_id)
-    means.append(mean)
-    logvars.append(logvar)
+    means.append(mean[0])
+    logvars.append(logvar[0])
 
   return means, logvars
 
@@ -414,12 +408,14 @@ def n_sample(sess, model, config):
   with gfile.GFile(FLAGS.input, "r") as fs:
     sentences = fs.readlines()
   mean, logvar = encode(sess, model, config, sentences)
-  mean = mean[0][0][0]
-  logvar = logvar[0][0][0]
+  mean = mean[0].reshape(1,-1)
+  logvar = logvar[0].reshape(1,-1)
   means = [mean] * config.num_pts
   neg_inf_logvar = np.full(logvar.shape, -800.0, dtype=np.float32)
   logvars = [neg_inf_logvar] + [logvar] * (config.num_pts - 1)
-  latent_vectors = model.sample(sess, means, logvars, bucket_id)
+  latent_vectors = []
+  for mean, logvar in zip(means, logvars):
+    latent_vectors.append(model.sample(sess, mean, logvar, bucket_id))
   outputs = decode(sess, model, config, latent_vectors, bucket_id)
   with gfile.GFile(FLAGS.output, "w") as sample_f:
     for output in outputs:
@@ -434,7 +430,8 @@ def interpolate(sess, model, config, latent_vectors, num_pts):
     raise ValueError("there should be more than two points when interpolating."
                      "number of points: %d." % num_pts)
   pts = []
-  for s, e in zip(latent_vectors[0][0][0].tolist(),latent_vectors[1][0][0].tolist()):
+  print(latent_vectors)
+  for s, e in zip(latent_vectors[0].tolist(),latent_vectors[1].tolist()):
     pts.append(np.linspace(s, e, num_pts))
 
   pts = np.array(pts)
@@ -447,6 +444,7 @@ def interpolate(sess, model, config, latent_vectors, num_pts):
   return outputs
 
 def encode_interpolate(sess, model, config):
+  bucket_id = len(config.buckets) - 1
   with gfile.GFile(FLAGS.input, "r") as fs:
     sentences = fs.readlines()
   model.batch_size = 1

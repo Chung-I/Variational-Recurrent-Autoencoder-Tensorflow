@@ -843,21 +843,22 @@ def variational_encoder_with_buckets(encoder_inputs, buckets, encoder,
 
   return means, logvars
 
-def sample_with_buckets(means, logvars, weights, buckets):
+def sample_with_buckets(means, logvars, weights, buckets, sample, name=None):
 
   KL_objs = []
   KL_costs = []
   latent_vectors = []
-  with ops.name_scope(name, "variational_encoder_with_buckets", all_inputs):
+  all_inputs = weights
+  with ops.name_scope(name, "sample_with_buckets", all_inputs):
     for j, bucket in enumerate(buckets):
       with variable_scope.variable_scope(variable_scope.get_variable_scope(),
                                          reuse=True if j > 0 else None):
-      latent_vector, kl_obj, kl_cost = sample(means[j], logvars[j])
-      latent_vectors.append(latent_vector)
-      total_size = math_ops.add_n(weights[:bucket[1]])
-      total_size += 1e-12 
-      KL_objs.append(tf.reduce_mean(kl_obj / total_size))
-      KL_costs.append(tf.reduce_mean(kl_cost / total_size))
+        latent_vector, kl_obj, kl_cost = sample(means[j], logvars[j])
+        latent_vectors.append(latent_vector)
+        total_size = math_ops.add_n(weights[:bucket[1]])
+        total_size += 1e-12 
+        KL_objs.append(tf.reduce_mean(kl_obj / total_size))
+        KL_costs.append(tf.reduce_mean(kl_cost / total_size))
 
   return latent_vectors, KL_objs, KL_costs
 
