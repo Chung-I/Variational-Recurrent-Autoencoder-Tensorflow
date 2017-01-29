@@ -23,12 +23,12 @@
     "max_train_data_size": 0,
     "steps_per_checkpoint": 2000,
     "feed_previous": true,
-    "Lambda": 4,
+    "kl_min": 4,
     "max_gradient_norm": 5.0,
     "word_dropout_keep_prob": 0.0,
     "anneal": false
   },
-  "encode_decode": {
+  "reconstruct": {
     "feed_previous": true,
     "word_dropout_keep_prob": 0.0
   },
