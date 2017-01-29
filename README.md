@@ -19,22 +19,22 @@ git clone https://github.com/Chung-I/Variational-Recurrent-Autoencoder-Tensorflo
 
 Training:
 ```shell=
-python translate.py  --model_dir models --do train --new True
+python vrae.py  --model_dir models --do train --new True
 ```
 
 Reconstruct:
 ```shell=
-python translate.py --model_dir models --do reconstruct --new False --input input.txt --output output.txt
+python vrae.py --model_dir models --do reconstruct --new False --input input.txt --output output.txt
 ```
 
 Sample:
 ```shell=
-python translate.py --model_dir models --do sample --new False --input input.txt --output output.txt
+python vrae.py --model_dir models --do sample --new False --input input.txt --output output.txt
 ```
 
 Interpolate:
 ```shell=
-python translate.py --model_dir models --do interpolate --new False --input input.txt --output output.txt
+python vrae.py --model_dir models --do interpolate --new False --input input.txt --output output.txt
 ```
 
 `model_dir`: The location of the config file `config.json` and the checkpoint file.
@@ -45,7 +45,7 @@ python translate.py --model_dir models --do interpolate --new False --input inpu
 
 ## config.json
 
-Hyperparameters are not passed from command prompt like that in [tensorflow/models/rnn/translate/translate.py](https://github.com/tensorflow/tensorflow/blob/r0.12/tensorflow/models/rnn/translate/translate.py). Instead, [vrae.py](https://github.com/Chung-I/Variational-Recurrent-Autoencoder-Tensorflow/blob/master/translate.py) reads hyperparameters from [config.json](https://github.com/Chung-I/Variational-Recurrent-Autoencoder-Tensorflow/blob/master/models/config.json) in `model_dir`.
+Hyperparameters are not passed from command prompt like that in [tensorflow/models/rnn/translate/translate.py](https://github.com/tensorflow/tensorflow/blob/r0.12/tensorflow/models/rnn/translate/translate.py). Instead, [vrae.py](https://github.com/Chung-I/Variational-Recurrent-Autoencoder-Tensorflow/blob/master/vrae.py) reads hyperparameters from [config.json](https://github.com/Chung-I/Variational-Recurrent-Autoencoder-Tensorflow/blob/master/models/config.json) in `model_dir`.
 
 Below are hyperparameters in [config.json](https://github.com/Chung-I/Variational-Recurrent-Autoencoder-Tensorflow/blob/master/models/config.json):
 
