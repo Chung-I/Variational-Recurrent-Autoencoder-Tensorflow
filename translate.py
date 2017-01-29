@@ -128,7 +128,7 @@ def create_model(session, config, forward_only):
       config.max_gradient_norm,
       config.batch_size,
       config.learning_rate,
-      config.Lambda,
+      config.kl_min,
       config.word_dropout_keep_prob,
       config.anneal,
       config.use_lstm,
@@ -460,8 +460,8 @@ def encode_interpolate(sess, model, config):
 class Struct(object):
   def __init__(self, **entries):
     self.__dict__.update(entries)
-    if not self.__dict__.get("Lambda"):
-      self.__dict__.update({ "Lambda": None })
+    if not self.__dict__.get("kl_min"):
+      self.__dict__.update({ "kl_min": None })
     if not self.__dict__.get("max_gradient_norm"):
       self.__dict__.update({ "max_gradient_norm": 5.0 })
     if not self.__dict__.get("load_embeddings"):

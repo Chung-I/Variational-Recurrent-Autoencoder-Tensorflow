@@ -54,7 +54,7 @@ class Seq2SeqModel(object):
                max_gradient_norm,
                batch_size,
                learning_rate,
-               Lambda=2,
+               kl_min=2,
                word_dropout_keep_prob=1.0,
                anneal=False,
                kl_rate_rise_factor=None,
@@ -97,7 +97,7 @@ class Seq2SeqModel(object):
     self.buckets = buckets
     self.batch_size = batch_size
     self.word_dropout_keep_prob = word_dropout_keep_prob
-    self.Lambda = Lambda
+    self.kl_min = kl_min
     feed_previous = feed_previous or forward_only
 
     self.learning_rate = tf.Variable(
@@ -198,7 +198,7 @@ class Seq2SeqModel(object):
            logvar,
            latent_dim,
            iaf,
-           Lambda,
+           kl_min,
            anneal,
            self.kl_rate,
            dtype)

@@ -633,7 +633,7 @@ def sample(means,
            logvars,
            latent_dim,
            iaf=True,
-           Lambda=None,
+           kl_min=None,
            anneal=False,
            kl_rate=None,
            dtype=None):
@@ -644,7 +644,7 @@ def sample(means,
     logvars: tensor of shape (batch_size, latent_dim)
     latent_dim: dimension of latent space.
     iaf: perform linear IAF or not.
-    Lambda: lower bound for KL divergence.
+    kl_min: lower bound for KL divergence.
     anneal: perform KL cost annealing or not.
     kl_rate: KL divergence is multiplied by kl_rate if anneal is set to True.
   Returns:
@@ -675,8 +675,8 @@ def sample(means,
         tf.exp(logvars) + 1.0)
   kl_ave = tf.reduce_mean(kl_cost, [0]) #mean of kl_cost over batches
   kl_obj = kl_cost = tf.reduce_sum(kl_ave)
-  if Lambda:
-    kl_obj = tf.reduce_sum(tf.maximum(kl_ave, Lambda))
+  if kl_min:
+    kl_obj = tf.reduce_sum(tf.maximum(kl_ave, kl_min))
   if anneal:
     kl_obj = kl_obj * kl_rate
 
