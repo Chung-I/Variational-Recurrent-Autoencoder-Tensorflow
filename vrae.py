@@ -474,6 +474,8 @@ class Struct(object):
       self.__dict__.update({ "anneal": False })
     if not self.__dict__.get("beam_size"):
       self.__dict__.update({ "beam_size": 1 })
+    if self.__dict__.get("beam_size") > 1:
+      raise NotImplementedError("Beam search is still under implementation.")
   def update(self, **entries):
     self.__dict__.update(entries)
 

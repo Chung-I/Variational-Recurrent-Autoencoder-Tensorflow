@@ -228,7 +228,6 @@ def beam_rnn_decoder(decoder_inputs, initial_state, cell, loop_function=None,
   return outputs, state, tf.reshape(tf.concat(0, beam_path),[-1,beam_size]), tf.reshape(tf.concat(0, beam_symbols),[-1,beam_size])
 
 
-
 def embedding_rnn_decoder(decoder_inputs,
                           initial_state,
                           cell,
@@ -682,6 +681,7 @@ def sample(means,
 
   return latent_vector, kl_obj, kl_cost #both kl_obj and kl_cost are scalar
 
+
 def encoder_to_latent(encoder_state,
                       embedding_size,
                       latent_dim,
@@ -707,7 +707,6 @@ def encoder_to_latent(encoder_state,
     b = tf.get_variable("b", [2 * latent_dim], dtype=dtype)
     mean_logvar = prelu(tf.matmul(encoder_state, w) + b)
     mean, logvar = tf.split(1, 2, mean_logvar)
-    
 
   return mean, logvar
 
@@ -805,7 +804,7 @@ def variational_autoencoder_with_buckets(encoder_inputs, decoder_inputs, targets
         bucket_outputs, _ = decoder(decoder_initial_state, decoder_inputs[:bucket[1]])
         outputs.append(bucket_outputs)
         total_size = math_ops.add_n(weights[:bucket[1]])
-        total_size += 1e-12 
+        total_size += 1e-12
         KL_divergences.append(tf.reduce_mean(kl_f(mean, logvar) / total_size))
         if per_example_loss:
           losses.append(sequence_loss_by_example(
@@ -815,7 +814,6 @@ def variational_autoencoder_with_buckets(encoder_inputs, decoder_inputs, targets
           losses.append(sequence_loss(
               outputs[-1], targets[:bucket[1]], weights[:bucket[1]],
               softmax_loss_function=softmax_loss_function))
-
 
   return outputs, losses, KL_divergences
 
@@ -842,6 +840,7 @@ def variational_encoder_with_buckets(encoder_inputs, buckets, encoder,
         logvars.append(logvar)
 
   return means, logvars
+
 
 def variational_decoder_with_buckets(means, logvars, decoder_inputs,
                        targets, weights,
@@ -873,7 +872,7 @@ def variational_decoder_with_buckets(means, logvars, decoder_inputs,
         bucket_outputs, _ = decoder(decoder_initial_state, decoder_inputs[:bucket[1]])
         outputs.append(bucket_outputs)
         total_size = math_ops.add_n(weights[:bucket[1]])
-        total_size += 1e-12 
+        total_size += 1e-12
         KL_objs.append(tf.reduce_mean(kl_obj / total_size))
         KL_costs.append(tf.reduce_mean(kl_cost / total_size))
         if per_example_loss:
@@ -920,7 +919,7 @@ def variational_beam_decoder_with_buckets(means, logvars, decoder_inputs,
         beam_paths.append(beam_path)
         beam_symbols.append(beam_symbol)
         total_size = math_ops.add_n(weights[:bucket[1]])
-        total_size += 1e-12 
+        total_size += 1e-12
         KL_divergences.append(tf.reduce_mean(kl_cost / total_size))
         if per_example_loss:
           losses.append(sequence_loss_by_example(
