@@ -49,8 +49,8 @@ from tensorflow.python.platform import gfile
 tf.app.flags.DEFINE_string("model_dir", "models", "directory of the model.")
 tf.app.flags.DEFINE_boolean("new", True, "whether this is a new model or not.")
 tf.app.flags.DEFINE_string("do", "train", "what to do. accepts train, interpolate, sample, and decode.")
-tf.app.flags.DEFINE_string("input", None, "input filename for encode_decode sample, and interpolate.")
-tf.app.flags.DEFINE_string("output", None, "output filename for encode_decode sample, and interpolate.")
+tf.app.flags.DEFINE_string("input", None, "input filename for reconstruct sample, and interpolate.")
+tf.app.flags.DEFINE_string("output", None, "output filename for reconstruct sample, and interpolate.")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -283,7 +283,7 @@ def train(config):
         dev_writer.add_summary(eval_KL_loss_summary, current_step)
 
 
-def encode_decode(sess, model, config):
+def reconstruct(sess, model, config):
   model.batch_size = 1  # We decode one sentence at a time.
   model.probabilistic = config.probabilistic
   beam_size = config.beam_size
@@ -484,7 +484,7 @@ def main(_):
     configs = json.load(config_file)
 
   FLAGS.model_name = os.path.basename(os.path.normpath(FLAGS.model_dir)) 
-  behavior = ["train", "interpolate", "encode_decode", "sample"]
+  behavior = ["train", "interpolate", "reconstruct", "sample"]
   if FLAGS.do not in behavior:
     raise ValueError("argument \"do\" is not one of the following: train, interpolate, decode or sample.")
 
@@ -496,14 +496,14 @@ def main(_):
   interp_config = Struct(**configs["model"])
   interp_config.update(**configs["interpolate"])
   enc_dec_config = Struct(**configs["model"])
-  enc_dec_config.update(**configs["encode_decode"])
+  enc_dec_config.update(**configs["reconstruct"])
   sample_config = Struct(**configs["model"])
   sample_config.update(**configs["sample"])
 
-  if FLAGS.do == "encode_decode":
+  if FLAGS.do == "reconstruct":
     with tf.Session() as sess:
       model = create_model(sess, enc_dec_config, True)
-      encode_decode(sess, model, enc_dec_config)
+      reconstruct(sess, model, enc_dec_config)
   elif FLAGS.do == "interpolate":
     with tf.Session() as sess:
       model = create_model(sess, interp_config, True)
