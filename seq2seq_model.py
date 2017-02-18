@@ -346,8 +346,7 @@ class Seq2SeqModel(object):
       input_feed[self.encoder_inputs[l].name] = encoder_inputs[l]
 
 
-
-    output_feed = [self.means, self.logvars]
+    output_feed = [self.means[bucket_id], self.logvars[bucket_id]]
     means, logvars = session.run(output_feed, input_feed)
 
     return means, logvars
