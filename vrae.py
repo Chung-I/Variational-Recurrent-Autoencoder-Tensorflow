@@ -415,8 +415,8 @@ def n_sample(sess, model, config):
   with gfile.GFile(FLAGS.input, "r") as fs:
     sentences = fs.readlines()
   mean, logvar = encode(sess, model, config, sentences)
-  mean = mean[0][0][0]
-  logvar = logvar[0][0][0]
+  mean = mean[0][0]
+  logvar = logvar[0][0]
   means = [mean] * config.num_pts
   neg_inf_logvar = np.full(logvar.shape, -800.0, dtype=np.float32)
   logvars = [neg_inf_logvar] + [logvar] * (config.num_pts - 1)
@@ -434,7 +434,7 @@ def interpolate(sess, model, config, means, logvars, num_pts):
     raise ValueError("there should be more than two points when interpolating."
                      "number of points: %d." % num_pts)
   pts = []
-  for s, e in zip(means[0][0][0].tolist(),means[1][0][0].tolist()):
+  for s, e in zip(means[0][0].tolist(),means[1][0].tolist()):
     pts.append(np.linspace(s, e, num_pts))
 
   pts = np.array(pts)
