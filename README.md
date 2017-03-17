@@ -92,3 +92,6 @@ Below are hyperparameters in [config.json](https://github.com/Chung-I/Variationa
     - `word_dropout_keep_prob`
     - `num_pts`: sample `num_pts` points.
 
+## Data
+
+Penn TreeBank corpus is included in the repo. We also provide a Chinese poem corpus, which can be download [here](https://drive.google.com/open?id=0B08WmZIVGFtGclpleFpiV1BxeTA).
