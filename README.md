@@ -94,4 +94,4 @@ Below are hyperparameters in [config.json](https://github.com/Chung-I/Variationa
 
 ## Data
 
-Penn TreeBank corpus is included in the repo. We also provide a Chinese poem corpus, which can be download [here](https://drive.google.com/open?id=0B08WmZIVGFtGclpleFpiV1BxeTA).
+Penn TreeBank corpus is included in the repo. We also provide a Chinese poem corpus, which can be download [here](https://drive.google.com/open?id=0B08WmZIVGFtGclpleFpiV1BxeTA). A model trained on the above Chinese peom corpus can be download [here](https://drive.google.com/open?id=0B08WmZIVGFtGc2J3N3lZeHMycFU).
