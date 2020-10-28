@@ -27,12 +27,12 @@ Reconstruct:
 python vrae.py --model_dir models --do reconstruct --new False --input input.txt --output output.txt
 ```
 
-Sample:
+Sample (this script read only the first line of `input.txt`, generate `num_pts` samples, and write them into `output.txt`):
 ```shell=
 python vrae.py --model_dir models --do sample --new False --input input.txt --output output.txt
 ```
 
-Interpolate:
+Interpolate (this script requires that `input.txt` consists of only two sentences; it generate `num_pts` interpolations between them, and write those interpolated sentences into `output.txt`):: 
 ```shell=
 python vrae.py --model_dir models --do interpolate --new False --input input.txt --output output.txt
 ```
@@ -94,4 +94,4 @@ Below are hyperparameters in [config.json](https://github.com/Chung-I/Variationa
 
 ## Data
 
-Penn TreeBank corpus is included in the repo. We also provide a Chinese poem corpus, which can be download [here](https://drive.google.com/open?id=0B08WmZIVGFtGclpleFpiV1BxeTA). A model trained on the above Chinese peom corpus can be download [here](https://drive.google.com/open?id=0B08WmZIVGFtGc2J3N3lZeHMycFU). The corresponding vocabulary file is [here](https://drive.google.com/drive/folders/0B08WmZIVGFtGSVZnUU9qbHNtMEk).
+Penn TreeBank corpus is included in the repo. We also provide a [Chinese poem corpus](https://drive.google.com/file/d/178u6rYoupyT9crrIxXwHBMQ9v-7VhyqL/view?usp=sharing), [its preprocessed version](https://drive.google.com/file/d/1jfUuuVDf0dg9KZtof7Q-gotVmo-Pd3cF/view?usp=sharing) (set `{"model":{"data_dir": "<corpus_dir>"}}` in `<model_dir>/config.json` to it), and [its pretrained model](https://drive.google.com/file/d/1jfUuuVDf0dg9KZtof7Q-gotVmo-Pd3cF/view?usp=sharing) (set `model_dir` to it), all of which can be found [here](https://drive.google.com/drive/folders/1d7185c4qL6laphyEf5GZRV0I-2aSZcRK?usp=sharing).
