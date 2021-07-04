@@ -1,4 +1,4 @@
-# Gerating Sentences from a Continuous Space
+# Generating Sentences from a Continuous Space
 
 Tensorflow implementation of [Generating Sentences from a Continuous Space](https://arxiv.org/abs/1511.06349).
 
